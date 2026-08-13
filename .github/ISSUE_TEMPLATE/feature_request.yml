@@ -1,0 +1,77 @@
+name: Feature request
+description: Propose a focused improvement to RepoLens.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before the proposed implementation. RepoLens intentionally limits itself to public repositories, explicit user-triggered AI requests, and representative static analysis.
+
+        Do not include credentials, private repository content, personal data, or vulnerability details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who encounters this problem, and what are they trying to accomplish?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Describe the user-visible behavior. Mockups or examples are welcome when sanitized.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - GitHub browsing and repository detection
+        - Fast or deep analysis selection
+        - AI provider compatibility
+        - Reports, evidence, and follow-up questions
+        - Project map and visualization
+        - Privacy, security, or credential handling
+        - Accessibility, localization, or interface
+        - Developer experience or documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain current workarounds and why they are insufficient.
+
+  - type: textarea
+    id: trust
+    attributes:
+      label: Data and trust-boundary impact
+      description: Would this add permissions, network destinations, provider data, persistent storage, repository scope, code execution, or automatic AI calls? Write "None" if not applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Suggested validation
+      description: How should maintainers verify that the feature solves the problem without breaking privacy, security, cost, or accessibility expectations?
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and did not find an equivalent request.
+          required: true
+        - label: I understand that a proposal may remain out of scope for the MVP.
+          required: true
+        - label: This request contains no credentials, private repository content, personal data, or undisclosed vulnerability details.
+          required: true

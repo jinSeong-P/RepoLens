@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check manifest and tests
+        run: npm run check
+
+      - name: Build reproducible extension archive
+        run: |
+          npm run package:extension
+          sha256sum dist/repolens-extension-*.zip > /tmp/repolens-sha256
+          npm run package:extension
+          sha256sum --check /tmp/repolens-sha256
+          cp /tmp/repolens-sha256 dist/SHA256SUMS
+
+      - name: Upload extension archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: repolens-extension-${{ github.sha }}
+          path: |
+            dist/repolens-extension-*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

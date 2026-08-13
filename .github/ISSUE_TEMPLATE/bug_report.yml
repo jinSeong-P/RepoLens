@@ -1,0 +1,101 @@
+name: Bug report
+description: Report a reproducible RepoLens defect that does not contain sensitive information.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve RepoLens. Search existing issues before filing.
+
+        **Do not post API keys, GitHub tokens, vault data, private repository content, personal data, or vulnerability details.** Follow `SECURITY.md` and use GitHub private vulnerability reporting for sensitive reports.
+
+  - type: input
+    id: version
+    attributes:
+      label: RepoLens version or commit
+      description: Use the manifest version and, for a development checkout, the commit SHA.
+      placeholder: "0.1.0 / abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome and operating system
+      placeholder: "Chrome 128, Windows 11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Repository detection or GitHub collection
+        - GitHub OAuth or PAT connection
+        - AI provider connection or streaming
+        - Encrypted preset vault
+        - Fast or deep file selection
+        - Analysis report, citations, or follow-up questions
+        - Project map or Mermaid rendering
+        - History, cache, or settings
+        - Accessibility or visual interface
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the defect and its user impact. Mention whether it is consistent or intermittent.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use a public repository and non-secret test provider data where possible.
+      placeholder: |
+        1. Load RepoLens as an unpacked extension
+        2. Open a public repository
+        3. ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Add the visible error code/message, service-worker or side-panel error, and screenshots if useful. Remove credentials, request headers, personal data, and unnecessary source text.
+      render: text
+
+  - type: textarea
+    id: provider
+    attributes:
+      label: Provider details, if relevant
+      description: Give only the provider name, normalized base host, exact model ID, and streaming setting. Never include an API key or authorization header.
+      placeholder: "OpenAI / api.openai.com / model-id / streaming enabled"
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and did not find this bug.
+          required: true
+        - label: I ran the latest available RepoLens version or confirmed the bug still occurs on the default branch.
+          required: true
+        - label: This report contains no credentials, private repository content, personal data, or undisclosed vulnerability details.
+          required: true

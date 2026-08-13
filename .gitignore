@@ -1,0 +1,10 @@
+.chrome-test-profile/
+.chrome-fresh-ui-profile/
+.chrome-fresh-ui-profile2/
+.chrome-public-qa-profile/
+.playwright/
+.playwright-cli/
+dist/
+output/
+node_modules/
+npm-debug.log*

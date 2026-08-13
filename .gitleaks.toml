@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "GitHub OAuth Device Flow client IDs are public application identifiers, not client secrets."
+paths = ['''^src/github-oauth-config\.js$''']
+regexTarget = "match"
+regexes = ['''Ov23liivgnrHAPuPcLmv''']

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RepoLens</title>
+  <desc id="desc">A white repository lens and connected nodes on an indigo tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="18" y1="12" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#tile)"/>
+  <path d="M94 90 79 75" fill="none" stroke="#C7D2FE" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="55" cy="51" r="29" fill="none" stroke="#FFF" stroke-width="9"/>
+  <circle cx="55" cy="51" r="10" fill="none" stroke="#C7D2FE" stroke-width="6"/>
+  <path d="M40 75v12h30M55 75v12M70 75v12" fill="none" stroke="#FFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="40" cy="91" r="5" fill="#A5B4FC"/>
+  <circle cx="55" cy="91" r="5" fill="#A5B4FC"/>
+  <circle cx="70" cy="91" r="5" fill="#A5B4FC"/>
+</svg>
