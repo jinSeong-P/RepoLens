@@ -1,16 +1,46 @@
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
+export type ProviderConfigField = 'baseUrl' | 'model'
+
+export interface ProviderConfigInput {
+  baseUrl?: unknown
+  model?: unknown
+  streaming?: unknown
+}
+
+function isProviderConfigInput(value: unknown): value is ProviderConfigInput {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export interface ProviderConfig {
+  baseUrl: string
+  origin: string
+  permissionPattern: string
+  model: string
+  streaming: boolean
+}
+
+export interface NormalizedBaseUrl {
+  baseUrl: string
+  origin: string
+  permissionPattern: string
+  isLoopback: boolean
+}
+
 export class ProviderConfigError extends Error {
-  constructor(message, field = 'baseUrl') {
+  readonly field: ProviderConfigField
+
+  constructor(message: string, field: ProviderConfigField = 'baseUrl') {
     super(message)
     this.name = 'ProviderConfigError'
     this.field = field
   }
 }
 
-export function normalizeProviderConfig(input) {
-  const normalized = normalizeBaseUrl(input?.baseUrl)
-  const model = typeof input?.model === 'string' ? input.model.trim() : ''
+export function normalizeProviderConfig(input: unknown): ProviderConfig {
+  const candidate = isProviderConfigInput(input) ? input : undefined
+  const normalized = normalizeBaseUrl(candidate?.baseUrl)
+  const model = typeof candidate?.model === 'string' ? candidate.model.trim() : ''
 
   if (!model) {
     throw new ProviderConfigError('Model ID를 입력해 주세요.', 'model')
@@ -24,11 +54,11 @@ export function normalizeProviderConfig(input) {
     origin: normalized.origin,
     permissionPattern: normalized.permissionPattern,
     model,
-    streaming: input?.streaming !== false,
+    streaming: candidate?.streaming !== false,
   }
 }
 
-export function normalizeBaseUrl(input) {
+export function normalizeBaseUrl(input: unknown): NormalizedBaseUrl {
   const raw = typeof input === 'string' ? input.trim() : ''
   if (!raw) throw new ProviderConfigError('API 기준 URL을 입력해 주세요.')
   if (raw.includes('\\')) throw new ProviderConfigError('URL에 역슬래시를 사용할 수 없습니다.')
@@ -75,12 +105,12 @@ export function normalizeBaseUrl(input) {
   }
 }
 
-export function chatCompletionsUrl(baseUrl) {
+export function chatCompletionsUrl(baseUrl: unknown): string {
   const normalized = normalizeBaseUrl(baseUrl)
   return `${normalized.baseUrl}/chat/completions`
 }
 
-export function providerCacheIdentity(config) {
+export function providerCacheIdentity(config: unknown): string {
   const normalized = normalizeProviderConfig(config)
   return `${normalized.baseUrl}|${normalized.model}`
 }

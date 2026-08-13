@@ -27,6 +27,77 @@ const JAVASCRIPT_EXTENSIONS = new Set([
   'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'mts', 'cts',
 ])
 
+export type SelectionKind = 'anchor' | 'related' | 'fallback'
+
+export interface RepositoryTreeEntry {
+  path: string
+  sha: string
+  size: number
+  mode: string
+  type: 'blob'
+}
+
+export interface RepositoryCandidate extends RepositoryTreeEntry {
+  score: number
+  category: string
+  directory: string
+  reasons: string[]
+  relatedFromPaths: string[]
+}
+
+export interface SelectionCandidate extends RepositoryCandidate {
+  selectionKind: SelectionKind
+}
+
+export interface DecodedSelectionRecord {
+  path: string
+  text: string
+  sha?: string
+  truncated?: boolean
+  selectionKind?: SelectionKind
+  reasons?: string[]
+  relatedFromPaths?: string[]
+  [key: string]: unknown
+}
+
+export interface MaterializedFile {
+  id: string
+  path: string
+  sha?: string
+  text: string
+  lineCount: number
+  truncated: boolean
+  selectionKind: SelectionKind
+  reasons: string[]
+  relatedFromPaths: string[]
+}
+
+interface SelectionOptions {
+  maxFiles?: number
+}
+
+interface ExpansionOptions extends SelectionOptions {
+  excludePaths?: unknown
+}
+
+interface MaterializeOptions extends SelectionOptions {
+  maxFileChars?: number
+  maxTotalChars?: number
+}
+
+interface InternalReference {
+  fromPath: string
+  toPath: string
+  specifier: string
+  kind: 'import' | 'json'
+}
+
+interface ReferenceSpecifier {
+  specifier: string
+  kind: InternalReference['kind']
+  relativeOnly: boolean
+}
+
 export const REPOSITORY_SELECTION_LIMITS = Object.freeze({
   maxFiles: MAX_FILES,
   maxTreeEntries: MAX_TREE_ENTRIES,
@@ -36,14 +107,14 @@ export const REPOSITORY_SELECTION_LIMITS = Object.freeze({
 })
 
 /** Returns the first-pass file count for a user-selected final file limit. */
-export function quickFileLimit(maxFiles) {
+export function quickFileLimit(maxFiles: number): number {
   return Math.min(8, Math.max(1, Math.ceil(assertMaxFiles(maxFiles) / 2)))
 }
 
 /** Normalizes, filters, scores, and deterministically orders a Git tree. */
-export function buildRepositoryCandidates(entries) {
+export function buildRepositoryCandidates(entries: unknown): RepositoryCandidate[] {
   if (!Array.isArray(entries)) return []
-  const candidates = []
+  const candidates: RepositoryCandidate[] = []
   for (const entry of entries) {
     if (!isCandidateEntry(entry)) continue
     const { score, category, reasons } = describePath(entry.path)
@@ -65,8 +136,8 @@ export function buildRepositoryCandidates(entries) {
   // even if GitHub returns the same entries in a different order.
   candidates.sort((left, right) => compareCodePoints(left.path, right.path)
     || compareCodePoints(left.sha, right.sha))
-  const unique = []
-  let previousPath = null
+  const unique: RepositoryCandidate[] = []
+  let previousPath: string | null = null
   for (const candidate of candidates) {
     if (candidate.path === previousPath) continue
     unique.push(candidate)
@@ -77,7 +148,7 @@ export function buildRepositoryCandidates(entries) {
 }
 
 /** Selects high-value anchors while avoiding category and directory clumping. */
-export function selectAnchorCandidates(entries, options = {}) {
+export function selectAnchorCandidates(entries: unknown, options: SelectionOptions = {}): SelectionCandidate[] {
   const maxFiles = resolveMaxFiles(options.maxFiles)
   return pickBalanced(buildRepositoryCandidates(entries), maxFiles, 'anchor')
 }
@@ -88,31 +159,31 @@ export function selectAnchorCandidates(entries, options = {}) {
  * considered. Package names, URLs, aliases, and paths escaping the root are
  * ignored.
  */
-export function extractInternalReferences(anchorFiles, entries) {
+export function extractInternalReferences(anchorFiles: unknown, entries: unknown): InternalReference[] {
   if (!Array.isArray(anchorFiles)) return []
   const candidates = buildRepositoryCandidates(entries)
   const paths = new Set(candidates.map((candidate) => candidate.path))
   const sortedFiles = anchorFiles
-    .filter((file) => isSafePath(file?.path) && typeof file?.text === 'string')
+    .filter(isDecodedSelectionRecord)
     .slice()
     .sort((left, right) => compareCodePoints(left.path, right.path))
-  const edges = []
+  const edges: InternalReference[] = []
 
   for (const file of sortedFiles) {
     const text = file.text.slice(0, MAX_REFERENCE_SCAN_CHARS)
     const extension = extensionOf(file.path)
-    const references = []
+    const references: ReferenceSpecifier[] = []
     if (JAVASCRIPT_EXTENSIONS.has(extension)) {
       references.push(...extractJavaScriptSpecifiers(text).map((specifier) => ({
         specifier,
-        kind: 'import',
+        kind: 'import' as const,
         relativeOnly: true,
       })))
     }
     if (isReferenceJson(file.path)) {
       references.push(...extractJsonSpecifiers(text).map((specifier) => ({
         specifier,
-        kind: 'json',
+        kind: 'json' as const,
         relativeOnly: false,
       })))
     }
@@ -147,17 +218,21 @@ export function extractInternalReferences(anchorFiles, entries) {
  * Selects additional files after anchors. Directly referenced files rank
  * first; unused capacity is filled with balanced high-value candidates.
  */
-export function selectExpansionCandidates(entries, anchorFiles, options = {}) {
+export function selectExpansionCandidates(
+  entries: unknown,
+  anchorFiles: unknown,
+  options: ExpansionOptions = {},
+): SelectionCandidate[] {
   const maxFiles = resolveMaxFiles(options.maxFiles)
   const candidates = buildRepositoryCandidates(entries)
   const candidateByPath = new Map(candidates.map((candidate) => [candidate.path, candidate]))
-  const excluded = new Set()
-  for (const file of Array.isArray(anchorFiles) ? anchorFiles : []) {
-    if (isSafePath(file?.path)) excluded.add(file.path)
+  const excluded = new Set<string>()
+  for (const file of unknownArray(anchorFiles)) {
+    if (hasSafePath(file)) excluded.add(file.path)
   }
   for (const path of normalizeExcludedPaths(options.excludePaths)) excluded.add(path)
 
-  const sourcesByTarget = new Map()
+  const sourcesByTarget = new Map<string, Set<string>>()
   for (const edge of extractInternalReferences(anchorFiles, entries)) {
     if (excluded.has(edge.toPath)) continue
     let sources = sourcesByTarget.get(edge.toPath)
@@ -168,7 +243,7 @@ export function selectExpansionCandidates(entries, anchorFiles, options = {}) {
     sources.add(edge.fromPath)
   }
 
-  const related = []
+  const related: Array<SelectionCandidate & { relationScore: number }> = []
   for (const [path, sources] of sourcesByTarget) {
     const candidate = candidateByPath.get(path)
     if (!candidate) continue
@@ -202,20 +277,27 @@ export function selectExpansionCandidates(entries, anchorFiles, options = {}) {
 }
 
 /** Convenience wrapper returning anchors plus their second-pass expansion. */
-export function selectDeepCandidates(entries, anchorFiles, options = {}) {
+export function selectDeepCandidates(
+  entries: unknown,
+  anchorFiles: unknown,
+  options: SelectionOptions = {},
+): SelectionCandidate[] {
   const maxFiles = resolveMaxFiles(options.maxFiles)
   const candidates = buildRepositoryCandidates(entries)
   const candidateByPath = new Map(candidates.map((candidate) => [candidate.path, candidate]))
-  const anchorPaths = [...new Set((Array.isArray(anchorFiles) ? anchorFiles : [])
-    .map((file) => file?.path)
+  const anchorPaths = [...new Set(unknownArray(anchorFiles)
+    .filter(hasSafePath)
+    .map((file) => file.path)
     .filter((path) => candidateByPath.has(path)))]
     .sort(compareCodePoints)
-  const anchors = anchorPaths.slice(0, maxFiles).map((path) => ({
-    ...candidateByPath.get(path),
+  const anchors: SelectionCandidate[] = anchorPaths.slice(0, maxFiles).map((path) => {
+    const candidate = candidateByPath.get(path)!
+    return {
+    ...candidate,
     selectionKind: 'anchor',
-    reasons: [...candidateByPath.get(path).reasons],
+    reasons: [...candidate.reasons],
     relatedFromPaths: [],
-  }))
+  }})
   const expansion = selectExpansionCandidates(entries, anchorFiles, {
     maxFiles: Math.max(1, maxFiles - anchors.length),
     excludePaths: anchorPaths,
@@ -228,7 +310,7 @@ export function selectDeepCandidates(entries, anchorFiles, options = {}) {
  * Short files surrender unused capacity to longer files; no early file can
  * consume the total budget merely because it appeared first.
  */
-export function materializeSelection(decodedRecords, options = {}) {
+export function materializeSelection(decodedRecords: unknown, options: MaterializeOptions = {}) {
   const maxFiles = resolveMaxFiles(options.maxFiles)
   const maxFileChars = resolveBudget(
     options.maxFileChars,
@@ -242,10 +324,14 @@ export function materializeSelection(decodedRecords, options = {}) {
     DEFAULT_MAX_TOTAL_CHARS,
     'maxTotalChars',
   )
-  const records = []
-  for (const record of Array.isArray(decodedRecords) ? decodedRecords : []) {
+  const records: Array<DecodedSelectionRecord & {
+    selectionKind: SelectionKind
+    reasons: string[]
+    relatedFromPaths: string[]
+  }> = []
+  for (const record of unknownArray(decodedRecords)) {
     if (records.length >= maxFiles) break
-    if (!isSafePath(record?.path) || typeof record?.text !== 'string') continue
+    if (!isDecodedSelectionRecord(record)) continue
     const text = record.text.replace(/\r\n?/g, '\n')
     if (!text.trim() || text.includes('\u0000')) continue
     const replacements = (text.match(/\uFFFD/g) ?? []).length
@@ -263,8 +349,8 @@ export function materializeSelection(decodedRecords, options = {}) {
 
   const capacities = records.map((record) => Math.min(record.text.length, maxFileChars))
   const allocations = fairAllocations(capacities, maxTotalChars)
-  const files = records.map((record, index) => {
-    const text = safeSlice(record.text, allocations[index])
+  const files: MaterializedFile[] = records.map((record, index) => {
+    const text = safeSlice(record.text, allocations[index] ?? 0)
     return {
       id: `F${index + 1}`,
       path: record.path,
@@ -282,7 +368,7 @@ export function materializeSelection(decodedRecords, options = {}) {
   // Re-number after filtering so IDs are always contiguous.
   files.forEach((file, index) => { file.id = `F${index + 1}` })
   const totalChars = files.reduce((sum, file) => sum + file.text.length, 0)
-  const counts = { anchor: 0, related: 0, fallback: 0 }
+  const counts: Record<SelectionKind, number> = { anchor: 0, related: 0, fallback: 0 }
   for (const file of files) counts[file.selectionKind] += 1
   const metadata = Object.freeze({
     maxFiles,
@@ -294,11 +380,16 @@ export function materializeSelection(decodedRecords, options = {}) {
   return { files, totalChars, metadata, selectionMetadata: metadata }
 }
 
-function pickBalanced(candidates, count, selectionKind, initial = []) {
+function pickBalanced(
+  candidates: RepositoryCandidate[],
+  count: number,
+  selectionKind: SelectionKind,
+  initial: RepositoryCandidate[] = [],
+): SelectionCandidate[] {
   const remaining = candidates.slice()
-  const selected = []
-  const categoryCounts = new Map()
-  const directoryCounts = new Map()
+  const selected: SelectionCandidate[] = []
+  const categoryCounts = new Map<string, number>()
+  const directoryCounts = new Map<string, number>()
   for (const candidate of initial) {
     increment(categoryCounts, candidate.category)
     increment(directoryCounts, candidate.directory)
@@ -312,7 +403,7 @@ function pickBalanced(candidates, count, selectionKind, initial = []) {
         || right.score - left.score
         || compareCodePoints(left.path, right.path)
     })
-    const candidate = remaining.shift()
+    const candidate = remaining.shift()!
     const categoryNew = !categoryCounts.has(candidate.category)
     const directoryNew = !directoryCounts.has(candidate.directory)
     increment(categoryCounts, candidate.category)
@@ -331,7 +422,11 @@ function pickBalanced(candidates, count, selectionKind, initial = []) {
   return selected
 }
 
-function balancedScore(candidate, categoryCounts, directoryCounts) {
+function balancedScore(
+  candidate: RepositoryCandidate,
+  categoryCounts: Map<string, number>,
+  directoryCounts: Map<string, number>,
+): number {
   const categoryCount = categoryCounts.get(candidate.category) ?? 0
   const directoryCount = directoryCounts.get(candidate.directory) ?? 0
   return candidate.score
@@ -341,13 +436,13 @@ function balancedScore(candidate, categoryCounts, directoryCounts) {
     - directoryCount * 120
 }
 
-function describePath(path) {
+function describePath(path: string): { score: number; category: string; reasons: string[] } {
   const lower = path.toLowerCase()
-  const name = lower.split('/').at(-1)
+  const name = lower.split('/').at(-1) ?? ''
   const depth = lower.split('/').length - 1
   let score = Math.max(0, 100 - depth * 10)
   let category = 'other'
-  const reasons = []
+  const reasons: string[] = []
   if (/^readme(?:\.|$)/.test(name)) {
     score += 1_200
     category = 'documentation'
@@ -385,17 +480,19 @@ function describePath(path) {
   return { score, category, reasons }
 }
 
-function isCandidateEntry(entry) {
+function isCandidateEntry(entry: unknown): entry is RepositoryTreeEntry {
+  if (!isRecord(entry)) return false
   if (!entry || entry.type !== 'blob' || entry.mode === '120000' || entry.mode === '160000') return false
   if (!isSha(entry.sha) || !isSafePath(entry.path)) return false
-  if (!Number.isSafeInteger(entry.size) || entry.size <= 0 || entry.size > MAX_BLOB_BYTES) return false
+  if (typeof entry.size !== 'number' || !Number.isSafeInteger(entry.size)
+    || entry.size <= 0 || entry.size > MAX_BLOB_BYTES) return false
   const segments = entry.path.toLowerCase().split('/')
   if (segments.some((segment) => EXCLUDED_SEGMENTS.has(segment))) return false
   return !BINARY_EXTENSIONS.has(extensionOf(entry.path))
 }
 
-function extractJavaScriptSpecifiers(text) {
-  const found = []
+function extractJavaScriptSpecifiers(text: string): string[] {
+  const found: string[] = []
   const staticPattern = /\b(?:import|export)\s+(?:(?:type\s+)?[^'"\r\n;]{0,500}?\s+from\s*)?["']([^"'`\r\n]{1,500})["']/g
   const callPattern = /\b(?:require|import)\s*\(\s*["']([^"'`\r\n]{1,500})["']\s*\)/g
   for (const pattern of [staticPattern, callPattern]) {
@@ -406,15 +503,15 @@ function extractJavaScriptSpecifiers(text) {
   return [...new Set(found)].sort(compareCodePoints)
 }
 
-function extractJsonSpecifiers(text) {
-  let parsed
+function extractJsonSpecifiers(text: string): string[] {
+  let parsed: unknown
   try {
     parsed = JSON.parse(text.replace(/^\uFEFF/, ''))
   } catch {
     return []
   }
-  const found = []
-  const visit = (value, depth = 0) => {
+  const found: string[] = []
+  const visit = (value: unknown, depth = 0): void => {
     if (depth > 30) return
     if (typeof value === 'string') {
       if (value.length > 0 && value.length <= 500) found.push(value)
@@ -425,14 +522,19 @@ function extractJsonSpecifiers(text) {
       return
     }
     if (value && typeof value === 'object') {
-      for (const key of Object.keys(value).sort(compareCodePoints).slice(0, 5_000)) visit(value[key], depth + 1)
+      for (const key of Object.keys(value).sort(compareCodePoints).slice(0, 5_000)) visit((value as Record<string, unknown>)[key], depth + 1)
     }
   }
   visit(parsed)
   return [...new Set(found)].sort(compareCodePoints)
 }
 
-function resolveTreePath(fromPath, rawSpecifier, paths, relativeOnly) {
+function resolveTreePath(
+  fromPath: string,
+  rawSpecifier: string,
+  paths: Set<string>,
+  relativeOnly: boolean,
+): string | null {
   if (typeof rawSpecifier !== 'string' || rawSpecifier.length === 0 || rawSpecifier.length > 500) return null
   if (rawSpecifier.includes('\\') || rawSpecifier.includes('\u0000')
     || rawSpecifier.startsWith('/') || /^[A-Za-z][A-Za-z\d+.-]*:/.test(rawSpecifier)) return null
@@ -462,7 +564,7 @@ function resolveTreePath(fromPath, rawSpecifier, paths, relativeOnly) {
   return null
 }
 
-function fairAllocations(capacities, totalBudget) {
+function fairAllocations(capacities: number[], totalBudget: number): number[] {
   const allocations = capacities.map(() => 0)
   let remaining = Math.min(totalBudget, capacities.reduce((sum, value) => sum + value, 0))
   let active = capacities.map((_, index) => index).filter((index) => capacities[index] > 0)
@@ -495,7 +597,7 @@ function fairAllocations(capacities, totalBudget) {
   return allocations
 }
 
-function safeSlice(text, length) {
+function safeSlice(text: string, length: number): string {
   let end = Math.min(length, text.length)
   if (end > 0 && end < text.length) {
     const last = text.charCodeAt(end - 1)
@@ -504,37 +606,37 @@ function safeSlice(text, length) {
   return text.slice(0, end)
 }
 
-function isReferenceJson(path) {
-  const name = path.toLowerCase().split('/').at(-1)
+function isReferenceJson(path: string): boolean {
+  const name = path.toLowerCase().split('/').at(-1) ?? ''
   return name === 'package.json' || /^tsconfig(?:\.[^.]+)?\.json$/.test(name)
 }
 
-function normalizeExcludedPaths(value) {
+function normalizeExcludedPaths(value: unknown): string[] {
   const values = value instanceof Set ? [...value] : Array.isArray(value) ? value : []
   return values.filter(isSafePath)
 }
 
-function normalizeStringList(value) {
+function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.filter((item) => typeof item === 'string' && item.length <= 500))]
 }
 
-function normalizeSelectionKind(value) {
+function normalizeSelectionKind(value: unknown): SelectionKind {
   return value === 'related' || value === 'fallback' ? value : 'anchor'
 }
 
-function resolveMaxFiles(value) {
+function resolveMaxFiles(value: number | undefined): number {
   return assertMaxFiles(value === undefined ? DEFAULT_MAX_FILES : value)
 }
 
-function assertMaxFiles(value) {
+function assertMaxFiles(value: number): number {
   if (!Number.isInteger(value) || value < 1 || value > MAX_FILES) {
     throw new RangeError(`maxFiles must be an integer between 1 and ${MAX_FILES}.`)
   }
   return value
 }
 
-function resolveBudget(value, fallback, maximum, name) {
+function resolveBudget(value: number | undefined, fallback: number, maximum: number, name: string): number {
   if (value === undefined) return fallback
   if (!Number.isInteger(value) || value < 1 || value > maximum) {
     throw new RangeError(`${name} must be an integer between 1 and ${maximum}.`)
@@ -542,7 +644,7 @@ function resolveBudget(value, fallback, maximum, name) {
   return value
 }
 
-function isSafePath(path) {
+function isSafePath(path: unknown): path is string {
   return typeof path === 'string'
     && path.length > 0
     && path.length <= 500
@@ -552,33 +654,49 @@ function isSafePath(path) {
     && !path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
 }
 
-function isRelativeSpecifier(value) {
+function isRelativeSpecifier(value: unknown): value is string {
   return typeof value === 'string' && (value.startsWith('./') || value.startsWith('../'))
 }
 
-function isSha(value) {
+function isSha(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value)
 }
 
-function directoryOf(path) {
+function directoryOf(path: string): string {
   const slash = path.lastIndexOf('/')
   return slash < 0 ? '.' : path.slice(0, slash)
 }
 
-function extensionOf(path) {
-  const name = path.toLowerCase().split('/').at(-1)
+function extensionOf(path: string): string {
+  const name = path.toLowerCase().split('/').at(-1) ?? ''
   const dot = name.lastIndexOf('.')
   return dot < 0 ? '' : name.slice(dot + 1)
 }
 
-function hasExtension(path) {
-  return path.split('/').at(-1).includes('.')
+function hasExtension(path: string): boolean {
+  return (path.split('/').at(-1) ?? '').includes('.')
 }
 
-function increment(map, key) {
+function increment(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1)
 }
 
-function compareCodePoints(left, right) {
+function compareCodePoints(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
+}
+
+function unknownArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value as unknown[] : []
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+function hasSafePath(value: unknown): value is { path: string } {
+  return isRecord(value) && isSafePath(value.path)
+}
+
+function isDecodedSelectionRecord(value: unknown): value is DecodedSelectionRecord {
+  return hasSafePath(value) && 'text' in value && typeof value.text === 'string'
 }

@@ -9,7 +9,7 @@
   </head>
   <body>
     <header class="app-header">
-      <button id="home-button" class="brand" type="button" aria-label="RepoLens 홈">
+      <button id="home-button" class="brand" type="button" aria-label="RepoLens 홈" data-i18n-aria-label="nav.homeAria">
         <span class="brand-mark" aria-hidden="true">
           <span class="brand-lens"></span>
           <span class="brand-node brand-node-a"></span>
@@ -17,12 +17,12 @@
         </span>
         <span>
           <strong>RepoLens</strong>
-          <small>저장소 필드 가이드</small>
+          <small data-i18n="brand.tagline">저장소 필드 가이드</small>
         </span>
       </button>
-      <nav aria-label="RepoLens 메뉴">
-        <button id="history-button" class="icon-button" type="button" aria-label="분석 기록" title="분석 기록"><span class="nav-icon nav-icon-history" aria-hidden="true"></span><span>기록</span></button>
-        <button id="settings-button" class="icon-button" type="button" aria-label="연결 및 분석 설정" title="연결 및 분석 설정"><span class="nav-icon nav-icon-settings" aria-hidden="true"></span><span>연결</span></button>
+      <nav aria-label="RepoLens 메뉴" data-i18n-aria-label="nav.menuAria">
+        <button id="history-button" class="icon-button" type="button" aria-label="분석 기록" title="분석 기록" data-i18n-aria-label="nav.historyAria" data-i18n-title="nav.historyAria"><span class="nav-icon nav-icon-history" aria-hidden="true"></span><span data-i18n="nav.history">기록</span></button>
+        <button id="settings-button" class="icon-button" type="button" aria-label="연결 및 분석 설정" title="연결 및 분석 설정" data-i18n-aria-label="nav.settingsAria" data-i18n-title="nav.settingsAria"><span class="nav-icon nav-icon-settings" aria-hidden="true"></span><span data-i18n="nav.settings">연결</span></button>
       </nav>
     </header>
 
@@ -37,97 +37,118 @@
 
       <section id="history-view" class="view" aria-labelledby="history-title" tabindex="-1" hidden>
         <div class="section-heading">
-          <p class="eyebrow">LOCAL HISTORY</p>
-          <h1 id="history-title">분석 기록</h1>
-          <p>결과와 질문은 이 브라우저에만 저장됩니다. API 키는 포함되지 않습니다.</p>
+          <p class="eyebrow" data-i18n="history.eyebrow">LOCAL HISTORY</p>
+          <h1 id="history-title" data-i18n="history.title">분석 기록</h1>
+          <p data-i18n="history.description">결과와 질문은 이 브라우저에만 저장됩니다. API 키는 포함되지 않습니다.</p>
         </div>
         <div id="history-content"></div>
       </section>
 
       <section id="settings-view" class="view" aria-labelledby="settings-title" tabindex="-1" hidden>
         <div class="section-heading">
-          <p class="eyebrow">연결 및 보안</p>
-          <h1 id="settings-title">연결 및 분석 설정</h1>
-          <p>암호화 연결과 분석 범위를 한곳에서 관리합니다.</p>
+          <p class="eyebrow" data-i18n="settings.eyebrow">연결 및 보안</p>
+          <h1 id="settings-title" data-i18n="settings.title">연결 및 분석 설정</h1>
+          <p data-i18n="settings.description">암호화 연결과 분석 범위를 한곳에서 관리합니다.</p>
         </div>
 
-        <div class="connection-overview" aria-label="연결 상태 요약">
-          <button class="connection-step" type="button" data-settings-target="provider-vault" aria-label="볼트 설정으로 이동">
+        <form id="language-settings-form" class="settings-card language-settings-card">
+          <div class="settings-card-heading">
+            <div>
+              <p class="eyebrow" data-i18n="settings.languageEyebrow">0 · 언어</p>
+              <h2 data-i18n="settings.languageTitle">언어</h2>
+            </div>
+          </div>
+          <p class="help" data-i18n="locale.help">화면 문구와 새 AI 분석 결과의 언어를 각각 선택합니다. 기존 보고서는 작성된 언어로 유지됩니다.</p>
+          <label for="ui-locale" data-i18n="locale.uiLabel">화면 언어</label>
+          <select id="ui-locale" name="uiLocale">
+            <option value="ko" data-i18n="locale.ko">한국어</option>
+            <option value="en" data-i18n="locale.en">English</option>
+          </select>
+          <label for="ai-output-locale" data-i18n="locale.outputLabel">AI 분석 결과 언어</label>
+          <select id="ai-output-locale" name="aiOutputLocale">
+            <option value="ko" data-i18n="analysis.outputLocaleKo">한국어</option>
+            <option value="en" data-i18n="analysis.outputLocaleEn">영어</option>
+          </select>
+          <p id="language-settings-status" class="form-status" role="status" aria-live="polite"></p>
+        </form>
+
+        <div class="connection-overview" aria-label="연결 상태 요약" data-i18n-aria-label="settings.connectionSummaryAria">
+          <button class="connection-step" type="button" data-settings-target="provider-vault" aria-label="볼트 설정으로 이동" data-i18n-aria-label="settings.vaultTargetAria">
             <span class="step-index" aria-hidden="true">1</span>
-            <span><strong>볼트</strong><small id="vault-overview-state">확인 중</small></span>
+            <span><strong data-i18n="settings.vault">볼트</strong><small id="vault-overview-state" data-i18n="common.checking">확인 중</small></span>
           </button>
           <span class="step-line" aria-hidden="true"></span>
-          <button class="connection-step" type="button" data-settings-target="provider-form" aria-label="AI 연결 설정으로 이동">
+          <button class="connection-step" type="button" data-settings-target="provider-form" aria-label="AI 연결 설정으로 이동" data-i18n-aria-label="settings.providerTargetAria">
             <span class="step-index" aria-hidden="true">2</span>
-            <span><strong>AI</strong><small id="provider-overview-state">설정 필요</small></span>
+            <span><strong data-i18n="settings.ai">AI</strong><small id="provider-overview-state" data-i18n="common.required">설정 필요</small></span>
           </button>
           <span class="step-line" aria-hidden="true"></span>
-          <button class="connection-step" type="button" data-settings-target="github-connection" aria-label="GitHub 연결 설정으로 이동">
+          <button class="connection-step" type="button" data-settings-target="github-connection" aria-label="GitHub 연결 설정으로 이동" data-i18n-aria-label="settings.githubTargetAria">
             <span class="step-index" aria-hidden="true">3</span>
-            <span><strong>GitHub</strong><small id="github-overview-state">확인 중</small></span>
+            <span><strong data-i18n="settings.github">GitHub</strong><small id="github-overview-state" data-i18n="common.checking">확인 중</small></span>
           </button>
         </div>
 
         <section id="provider-vault" class="settings-card" aria-labelledby="vault-title" tabindex="-1">
           <div class="settings-card-heading">
             <div>
-              <p class="eyebrow">1 · 암호화 보관함</p>
-              <h2 id="vault-title">AI 연결 프리셋</h2>
+              <p class="eyebrow" data-i18n="settings.vaultEyebrow">1 · 암호화 보관함</p>
+              <h2 id="vault-title" data-i18n="vault.title">AI 연결 프리셋</h2>
             </div>
-            <span id="vault-state-badge" class="vault-state-badge">확인 중</span>
+            <span id="vault-state-badge" class="vault-state-badge" data-i18n="common.checking">확인 중</span>
           </div>
-          <p class="help">엔드포인트, 모델, API 키를 하나의 프리셋으로 묶어 이 브라우저에 암호화해 저장합니다.</p>
+          <p class="help" data-i18n="vault.help">엔드포인트, 모델, API 키를 하나의 프리셋으로 묶어 이 브라우저에 암호화해 저장합니다.</p>
           <p id="vault-status" class="form-status vault-status" role="status" aria-live="polite"></p>
 
           <div id="vault-loading-state" class="vault-state" role="status" aria-live="polite">
             <div class="progress-line">
               <span class="spinner" aria-hidden="true"></span>
-              <span>암호화 프리셋 저장소를 확인하는 중…</span>
+              <span data-i18n="vault.loading">암호화 프리셋 저장소를 확인하는 중…</span>
             </div>
           </div>
 
           <div id="vault-empty-state" class="vault-state" hidden>
-            <h3>마스터 비밀번호 만들기</h3>
-            <p>프리셋을 잠그고 다시 열 때 사용할 비밀번호입니다. RepoLens는 이 비밀번호를 저장하거나 외부로 보내지 않습니다.</p>
+            <h3 data-i18n="vault.createTitle">마스터 비밀번호 만들기</h3>
+            <p data-i18n="vault.createDescription">프리셋을 잠그고 다시 열 때 사용할 비밀번호입니다. RepoLens는 이 비밀번호를 저장하거나 외부로 보내지 않습니다.</p>
             <form id="vault-setup-form" novalidate>
-              <label for="vault-create-password">마스터 비밀번호</label>
+              <label for="vault-create-password" data-i18n="vault.password">마스터 비밀번호</label>
               <input id="vault-create-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" aria-describedby="vault-password-help vault-setup-error" required>
 
-              <label for="vault-confirm-password">마스터 비밀번호 확인</label>
+              <label for="vault-confirm-password" data-i18n="vault.passwordConfirm">마스터 비밀번호 확인</label>
               <input id="vault-confirm-password" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="256" aria-describedby="vault-password-help vault-setup-error" required>
 
-              <p id="vault-password-help" class="help">12자 이상을 권장합니다. 브라우저를 닫거나 직접 잠그면 다시 입력해야 합니다.</p>
+              <p id="vault-password-help" class="help" data-i18n="vault.passwordHelp">12자 이상을 권장합니다. 브라우저를 닫거나 직접 잠그면 다시 입력해야 합니다.</p>
               <p id="vault-setup-error" class="form-error" role="alert" hidden></p>
               <div class="button-row">
-                <button id="create-vault" class="primary-button" type="submit">암호화 저장소 만들기</button>
+                <button id="create-vault" class="primary-button" type="submit" data-i18n="vault.create">암호화 저장소 만들기</button>
               </div>
             </form>
-            <p id="vault-recovery-warning" class="notice warning vault-warning"><strong>복구할 수 없습니다.</strong> 마스터 비밀번호를 잊으면 저장된 프리셋, API 키, GitHub 연결을 해독할 수 없으며 저장소를 초기화해야 합니다.</p>
+            <p id="vault-recovery-warning" class="notice warning vault-warning"><strong data-i18n="vault.noRecoveryTitle">복구할 수 없습니다.</strong> <span data-i18n="vault.noRecoveryDescription">마스터 비밀번호를 잊으면 저장된 프리셋, API 키, GitHub 연결을 해독할 수 없으며 저장소를 초기화해야 합니다.</span></p>
           </div>
 
           <div id="vault-locked-state" class="vault-state" hidden>
-            <h3>프리셋 저장소가 잠겨 있습니다</h3>
-            <p>마스터 비밀번호로 잠금을 해제해야 저장된 연결을 불러오거나 수정할 수 있습니다.</p>
+            <h3 data-i18n="vault.unlockTitle">프리셋 저장소가 잠겨 있습니다</h3>
+            <p data-i18n="vault.unlockDescription">마스터 비밀번호로 잠금을 해제해야 저장된 연결을 불러오거나 수정할 수 있습니다.</p>
             <form id="vault-unlock-form" novalidate>
-              <label for="vault-unlock-password">마스터 비밀번호</label>
+              <label for="vault-unlock-password" data-i18n="vault.password">마스터 비밀번호</label>
               <input id="vault-unlock-password" name="password" type="password" autocomplete="current-password" maxlength="256" aria-describedby="vault-unlock-help vault-unlock-error" required>
-              <p id="vault-unlock-help" class="help">비밀번호는 잠금 해제에만 사용되며 저장되지 않습니다.</p>
+              <p id="vault-unlock-help" class="help" data-i18n="vault.unlockHelp">비밀번호는 잠금 해제에만 사용되며 저장되지 않습니다.</p>
               <p id="vault-unlock-error" class="form-error" role="alert" hidden></p>
               <div class="button-row">
-                <button id="unlock-vault" class="primary-button" type="submit">프리셋 잠금 해제</button>
+                <button id="unlock-vault" class="primary-button" type="submit" data-i18n="vault.unlock">프리셋 잠금 해제</button>
               </div>
             </form>
-            <p class="notice warning vault-warning">마스터 비밀번호를 잊은 경우 복구할 수 없습니다. 초기화하면 암호화된 프리셋이 모두 삭제됩니다.</p>
-            <button id="reset-vault" class="text-button danger" type="button">암호화 프리셋 저장소 초기화</button>
+            <p class="notice warning vault-warning" data-i18n="vault.resetWarning">마스터 비밀번호를 잊은 경우 복구할 수 없습니다. 초기화하면 암호화된 프리셋이 모두 삭제됩니다.</p>
+            <button id="reset-vault" class="text-button danger" type="button" data-i18n="vault.reset">암호화 프리셋 저장소 초기화</button>
           </div>
 
           <div id="vault-unlocked-state" class="vault-state" hidden>
             <div class="vault-unlocked-heading">
               <div>
-                <h3>보관함이 열려 있습니다</h3>
-                <p class="help">아래 AI 연결 카드에서 프리셋을 선택하거나 새 연결을 저장할 수 있습니다.</p>
+                <h3 data-i18n="vault.openTitle">보관함이 열려 있습니다</h3>
+                <p class="help" data-i18n="vault.openDescription">아래 AI 연결 카드에서 프리셋을 선택하거나 새 연결을 저장할 수 있습니다.</p>
               </div>
-              <button id="lock-vault" class="secondary-button compact-button" type="button">지금 잠그기</button>
+              <button id="lock-vault" class="secondary-button compact-button" type="button" data-i18n="vault.lockNow">지금 잠그기</button>
             </div>
           </div>
         </section>
@@ -135,156 +156,156 @@
         <form id="provider-form" class="settings-card provider-settings-card" novalidate tabindex="-1">
           <div class="settings-card-heading provider-editor-heading">
             <div>
-              <p class="eyebrow">2 · AI 제공자</p>
-              <h2>AI 연결 프리셋</h2>
+              <p class="eyebrow" data-i18n="settings.providerEyebrow">2 · AI 제공자</p>
+              <h2 data-i18n="provider.title">AI 연결 프리셋</h2>
             </div>
-            <span id="provider-state-badge" class="vault-state-badge">설정 필요</span>
+            <span id="provider-state-badge" class="vault-state-badge" data-i18n="common.required">설정 필요</span>
           </div>
-          <p class="help">엔드포인트, 모델, API 키를 한 묶음으로 암호화해 저장하고 분석에 사용합니다.</p>
+          <p class="help" data-i18n="provider.help">엔드포인트, 모델, API 키를 한 묶음으로 암호화해 저장하고 분석에 사용합니다.</p>
 
-          <label for="preset-select">저장된 프리셋</label>
+          <label for="preset-select" data-i18n="provider.savedPreset">저장된 프리셋</label>
           <select id="preset-select" name="presetId" aria-describedby="preset-select-help">
-            <option value="">새 프리셋</option>
+            <option value="" data-i18n="provider.newPreset">새 프리셋</option>
           </select>
-          <p id="preset-select-help" class="help">선택하면 편집기에만 채워집니다. 아래 ‘저장하고 사용’을 누를 때 활성 연결이 바뀝니다.</p>
+          <p id="preset-select-help" class="help" data-i18n="provider.presetSelectHelp">선택하면 편집기에만 채워집니다. 아래 ‘저장하고 사용’을 누를 때 활성 연결이 바뀝니다.</p>
 
-          <label for="preset-name">프리셋 이름</label>
-          <input id="preset-name" name="presetName" type="text" autocomplete="off" maxlength="80" placeholder="예: 개인 OpenAI" aria-describedby="preset-name-help preset-error">
-          <p id="preset-name-help" class="help">API 제공자나 용도를 구분할 수 있는 이름을 사용하세요.</p>
+          <label for="preset-name" data-i18n="provider.presetName">프리셋 이름</label>
+          <input id="preset-name" name="presetName" type="text" autocomplete="off" maxlength="80" placeholder="예: 개인 OpenAI" data-i18n-placeholder="provider.presetNamePlaceholder" aria-describedby="preset-name-help preset-error">
+          <p id="preset-name-help" class="help" data-i18n="provider.presetNameHelp">API 제공자나 용도를 구분할 수 있는 이름을 사용하세요.</p>
           <p id="preset-error" class="form-error" role="alert" hidden></p>
 
-          <label for="base-url">API 기준 URL</label>
+          <label for="base-url" data-i18n="provider.baseUrl">API 기준 URL</label>
           <input id="base-url" name="baseUrl" type="url" autocomplete="url" placeholder="https://api.openai.com/v1" aria-describedby="base-url-help provider-error" required>
-          <p id="base-url-help" class="help"><code>/chat/completions</code>는 자동으로 붙습니다. 외부 서버는 HTTPS만 허용합니다.</p>
+          <p id="base-url-help" class="help"><code>/chat/completions</code><span data-i18n="provider.baseUrlHelp">는 자동으로 붙습니다. 외부 서버는 HTTPS만 허용합니다.</span></p>
 
-          <label for="model-id">Model ID</label>
-          <input id="model-id" name="model" type="text" autocomplete="off" placeholder="제공자가 안내한 모델 ID" aria-describedby="model-help provider-error" required>
-          <p id="model-help" class="help">모델 목록을 임의로 추측하지 않습니다. 정확한 ID를 입력해 주세요.</p>
+          <label for="model-id" data-i18n="provider.model">Model ID</label>
+          <input id="model-id" name="model" type="text" autocomplete="off" placeholder="제공자가 안내한 모델 ID" data-i18n-placeholder="provider.modelPlaceholder" aria-describedby="model-help provider-error" required>
+          <p id="model-help" class="help" data-i18n="provider.modelHelp">모델 목록을 임의로 추측하지 않습니다. 정확한 ID를 입력해 주세요.</p>
 
-          <label for="api-key">API 키</label>
+          <label for="api-key" data-i18n="provider.apiKey">API 키</label>
           <div class="secret-field">
-            <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="새 키 입력" aria-describedby="api-key-help provider-error">
-            <button id="toggle-key" class="field-button" type="button" aria-label="API 키 표시" aria-pressed="false">표시</button>
+            <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="새 키 입력" data-i18n-placeholder="provider.apiKeyPlaceholder" aria-describedby="api-key-help provider-error">
+            <button id="toggle-key" class="field-button" type="button" aria-label="API 키 표시" data-i18n-aria-label="provider.apiKeyShowAria" aria-pressed="false" data-i18n="common.show">표시</button>
           </div>
-          <p id="api-key-help" class="help">프리셋 저장 시 암호화해 보관합니다. 잠금 해제 중인 활성 연결만 Chrome의 신뢰된 세션 영역에서 사용됩니다.</p>
+          <p id="api-key-help" class="help" data-i18n="provider.apiKeyHelp">프리셋 저장 시 암호화해 보관합니다. 잠금 해제 중인 활성 연결만 Chrome의 신뢰된 세션 영역에서 사용됩니다.</p>
           <p id="key-state" class="key-state" hidden></p>
 
           <label class="check-row" for="streaming">
             <input id="streaming" name="streaming" type="checkbox" checked>
-            <span>가능하면 응답을 스트리밍으로 받기</span>
+            <span data-i18n="provider.streaming">가능하면 응답을 스트리밍으로 받기</span>
           </label>
 
           <p id="provider-error" class="form-error" role="alert" hidden tabindex="-1"></p>
           <p id="provider-status" class="form-status" role="status" aria-live="polite"></p>
 
           <div class="button-row">
-            <button id="test-provider" class="secondary-button" type="button">연결 테스트</button>
-            <button id="apply-provider" class="primary-button" type="submit">저장하고 사용</button>
+            <button id="test-provider" class="secondary-button" type="button" data-i18n="provider.test">연결 테스트</button>
+            <button id="apply-provider" class="primary-button" type="submit" data-i18n="provider.save">저장하고 사용</button>
           </div>
-          <button id="delete-preset" class="text-button danger preset-delete-action" type="button" disabled>선택한 프리셋 삭제</button>
-          <p class="fine-print">연결 테스트는 작은 AI 요청을 보내므로 소량의 사용량이 발생할 수 있습니다. GitHub 코드는 보내지 않습니다.</p>
+          <button id="delete-preset" class="text-button danger preset-delete-action" type="button" disabled data-i18n="provider.delete">선택한 프리셋 삭제</button>
+          <p class="fine-print" data-i18n="provider.testNotice">연결 테스트는 작은 AI 요청을 보내므로 소량의 사용량이 발생할 수 있습니다. GitHub 코드는 보내지 않습니다.</p>
         </form>
 
         <section id="github-connection" class="settings-card" aria-labelledby="github-title" tabindex="-1">
           <div class="settings-card-heading">
             <div>
-              <p class="eyebrow">3 · GitHub 접근</p>
-              <h2 id="github-title">GitHub 연결</h2>
+              <p class="eyebrow" data-i18n="settings.githubEyebrow">3 · GitHub 접근</p>
+              <h2 id="github-title" data-i18n="github.title">GitHub 연결</h2>
             </div>
-            <span id="github-state-badge" class="vault-state-badge">확인 중</span>
+            <span id="github-state-badge" class="vault-state-badge" data-i18n="common.checking">확인 중</span>
           </div>
-          <p class="help">연결하면 익명 요청 한도 대신 계정당 GitHub API 한도를 사용합니다. 공개 저장소만 읽으며 추가 권한을 요청하지 않습니다.</p>
+          <p class="help" data-i18n="github.help">연결하면 익명 요청 한도 대신 계정당 GitHub API 한도를 사용합니다. 공개 저장소만 읽으며 추가 권한을 요청하지 않습니다.</p>
           <p id="github-status" class="form-status vault-status" role="status" aria-live="polite"></p>
 
           <div id="github-disconnected-state">
             <div id="github-oauth-actions" class="button-row">
-              <button id="connect-github" class="primary-button" type="button">GitHub 자동 연결</button>
+              <button id="connect-github" class="primary-button" type="button" data-i18n="github.connect">GitHub 자동 연결</button>
             </div>
             <p id="github-connect-hint" class="control-hint" role="status"></p>
-            <p id="github-oauth-unavailable" class="notice warning" hidden>이 개발 빌드에는 OAuth Client ID가 아직 없습니다. 아래 개인 액세스 토큰 방식은 바로 사용할 수 있습니다.</p>
+            <p id="github-oauth-unavailable" class="notice warning" hidden data-i18n="github.oauthUnavailable">이 개발 빌드에는 OAuth Client ID가 아직 없습니다. 아래 개인 액세스 토큰 방식은 바로 사용할 수 있습니다.</p>
             <div id="github-device-flow" class="device-flow" hidden>
-              <p>GitHub 페이지가 열리면 아래 코드를 입력해 승인하세요.</p>
-              <output id="github-user-code" class="device-code" aria-label="GitHub 승인 코드"></output>
+              <p data-i18n="github.deviceInstructions">GitHub 페이지가 열리면 아래 코드를 입력해 승인하세요.</p>
+              <output id="github-user-code" class="device-code" aria-label="GitHub 승인 코드" data-i18n-aria-label="github.deviceCodeAria"></output>
               <div class="button-row">
-                <button id="copy-github-code" class="secondary-button" type="button">코드 복사</button>
-                <button id="open-github-device" class="secondary-button" type="button">승인 페이지 열기</button>
-                <button id="cancel-github-flow" class="text-button danger" type="button">취소</button>
+                <button id="copy-github-code" class="secondary-button" type="button" data-i18n="github.copyCode">코드 복사</button>
+                <button id="open-github-device" class="secondary-button" type="button" data-i18n="github.openApproval">승인 페이지 열기</button>
+                <button id="cancel-github-flow" class="text-button danger" type="button" data-i18n="common.cancel">취소</button>
               </div>
             </div>
             <details class="pat-settings">
-              <summary>고급: 개인 액세스 토큰 사용</summary>
+              <summary data-i18n="github.patSummary">고급: 개인 액세스 토큰 사용</summary>
               <form id="github-pat-form" novalidate>
-                <label for="github-pat">Fine-grained PAT</label>
+                <label for="github-pat" data-i18n="github.patLabel">Fine-grained PAT</label>
                 <input id="github-pat" name="token" type="password" autocomplete="off" placeholder="github_pat_…" aria-describedby="github-pat-help github-error">
-                <p id="github-pat-help" class="help">공개 저장소를 읽을 수 있는 최소 권한 토큰을 사용하세요. 토큰은 AI 프리셋과 같은 볼트에 암호화됩니다.</p>
-                <button id="save-github-pat" class="secondary-button" type="submit">토큰으로 연결</button>
+                <p id="github-pat-help" class="help" data-i18n="github.patHelp">공개 저장소를 읽을 수 있는 최소 권한 토큰을 사용하세요. 토큰은 AI 프리셋과 같은 볼트에 암호화됩니다.</p>
+                <button id="save-github-pat" class="secondary-button" type="submit" data-i18n="github.connectWithToken">토큰으로 연결</button>
               </form>
             </details>
           </div>
 
           <div id="github-connected-state" hidden>
-            <p><strong id="github-account"></strong> 계정으로 연결되었습니다.</p>
+            <p><strong id="github-account"></strong><span data-i18n="github.connectedAccountSuffix"> 계정으로 연결되었습니다.</span></p>
             <p id="github-auth-method" class="help"></p>
-            <button id="disconnect-github" class="secondary-button danger-button" type="button">GitHub 연결 해제</button>
+            <button id="disconnect-github" class="secondary-button danger-button" type="button" data-i18n="github.disconnect">GitHub 연결 해제</button>
           </div>
           <p id="github-error" class="form-error" role="alert" hidden></p>
         </section>
 
         <details id="analysis-preferences" class="analysis-preferences" open>
           <summary>
-            <span><small>4 · 분석 기본값</small><strong>분석 범위</strong></span>
-            <span id="file-limit-summary">빠른 최대 8개 · 심층 최대 16개</span>
+            <span><small data-i18n="settings.analysisEyebrow">4 · 분석 기본값</small><strong data-i18n="settings.analysisTitle">분석 범위</strong></span>
+            <span id="file-limit-summary" data-i18n="analysisSettings.defaultLimits">빠른 최대 8개 · 심층 최대 16개</span>
           </summary>
           <form id="analysis-settings-form" class="analysis-preferences-body" novalidate tabindex="-1" aria-labelledby="analysis-preferences-title">
-            <p id="analysis-preferences-title" class="help">README·설정·진입점·핵심 소스 순으로 AI에 보낼 대표 파일의 최대 개수를 선택합니다.</p>
+            <p id="analysis-preferences-title" class="help" data-i18n="analysisSettings.description">README·설정·진입점·핵심 소스 순으로 AI에 보낼 대표 파일의 최대 개수를 선택합니다.</p>
             <fieldset class="scope-options" aria-describedby="analysis-max-files-help analysis-settings-error">
-              <legend>심층 분석 파일 한도</legend>
+              <legend data-i18n="analysisSettings.limitLegend">심층 분석 파일 한도</legend>
               <label class="scope-option" for="analysis-scope-8">
                 <input id="analysis-scope-8" type="radio" name="maxFilesPreset" value="8">
-                <span><small>가볍게</small><strong>8</strong><em>빠른 탐색</em></span>
+                <span><small data-i18n="analysisSettings.scopeLight">가볍게</small><strong>8</strong><em data-i18n="analysisSettings.scopeLightHint">빠른 탐색</em></span>
               </label>
               <label class="scope-option" for="analysis-scope-16">
                 <input id="analysis-scope-16" type="radio" name="maxFilesPreset" value="16" checked>
-                <span><small>균형</small><strong>16</strong><em>권장 설정</em></span>
+                <span><small data-i18n="analysisSettings.scopeBalanced">균형</small><strong>16</strong><em data-i18n="analysisSettings.scopeBalancedHint">권장 설정</em></span>
               </label>
               <label class="scope-option" for="analysis-scope-24">
                 <input id="analysis-scope-24" type="radio" name="maxFilesPreset" value="24">
-                <span><small>넓게</small><strong>24</strong><em>더 많은 맥락</em></span>
+                <span><small data-i18n="analysisSettings.scopeWide">넓게</small><strong>24</strong><em data-i18n="analysisSettings.scopeWideHint">더 많은 맥락</em></span>
               </label>
               <label class="scope-option" for="analysis-scope-32">
                 <input id="analysis-scope-32" type="radio" name="maxFilesPreset" value="32">
-                <span><small>최대</small><strong>32</strong><em>가장 깊게</em></span>
+                <span><small data-i18n="analysisSettings.scopeMaximum">최대</small><strong>32</strong><em data-i18n="analysisSettings.scopeMaximumHint">가장 깊게</em></span>
               </label>
             </fieldset>
             <details class="custom-scope">
-              <summary>직접 입력</summary>
-              <label for="analysis-max-files">대표 파일 최대 개수</label>
+              <summary data-i18n="analysisSettings.custom">직접 입력</summary>
+              <label for="analysis-max-files" data-i18n="analysisSettings.maxFilesLabel">대표 파일 최대 개수</label>
               <input id="analysis-max-files" name="maxFiles" type="number" value="16" min="1" max="32" step="1" inputmode="numeric" aria-describedby="analysis-max-files-help analysis-settings-error" required>
             </details>
-            <p id="analysis-max-files-help" class="help">1~32개 · 기본 16개. 빠른 분석은 최대 8개 또는 설정 한도의 절반 중 작은 수를 사용하고, 심층 분석은 설정한 전체 한도를 사용합니다. ‘심층으로 확장’하면 AI 요청이 1회 추가됩니다. 파일 본문 합계는 각 단계에서 최대 48,000자로 유지됩니다.</p>
+            <p id="analysis-max-files-help" class="help" data-i18n="analysisSettings.maxFilesHelp">1~32개 · 기본 16개. 빠른 분석은 최대 8개 또는 설정 한도의 절반 중 작은 수를 사용하고, 심층 분석은 설정한 전체 한도를 사용합니다. ‘심층으로 확장’하면 AI 요청이 1회 추가됩니다. 파일 본문 합계는 각 단계에서 최대 48,000자로 유지됩니다.</p>
             <p id="analysis-settings-error" class="form-error" role="alert" hidden tabindex="-1"></p>
             <p id="analysis-settings-status" class="form-status" role="status" aria-live="polite"></p>
             <div class="button-row">
-              <button id="save-analysis-settings" class="primary-button" type="submit">분석 범위 저장</button>
+              <button id="save-analysis-settings" class="primary-button" type="submit" data-i18n="settings.saveAnalysis">분석 범위 저장</button>
             </div>
           </form>
         </details>
 
         <details class="danger-zone">
-          <summary>고급 및 위험 영역</summary>
+          <summary data-i18n="settings.danger">고급 및 위험 영역</summary>
           <div class="settings-actions">
-            <button id="clear-key" class="text-button danger" type="button" hidden>프리셋 저장소 잠그기</button>
-            <button id="clear-history" class="text-button danger" type="button">모든 분석 기록 삭제</button>
+            <button id="clear-key" class="text-button danger" type="button" hidden data-i18n="vault.lockAction">프리셋 저장소 잠그기</button>
+            <button id="clear-history" class="text-button danger" type="button" data-i18n="settings.clearHistory">모든 분석 기록 삭제</button>
           </div>
         </details>
 
         <details class="legal-notice">
-          <summary>오픈소스 라이선스</summary>
-          <p>RepoLens는 GPL-3.0-only로 배포되며 PocketRisu의 AI 전송 코드를 일부 수정해 사용합니다.</p>
+          <summary data-i18n="settings.licenses">오픈소스 라이선스</summary>
+          <p data-i18n="legal.description">RepoLens는 GPL-3.0-only로 배포되며 PocketRisu의 AI 전송 코드를 일부 수정해 사용합니다.</p>
           <p>
-            <a href="LICENSE" target="_blank" rel="noreferrer">GPL 전문</a>
+            <a href="LICENSE" target="_blank" rel="noreferrer" data-i18n="legal.gpl">GPL 전문</a>
             ·
-            <a href="THIRD_PARTY_NOTICES.md" target="_blank" rel="noreferrer">제3자 고지와 변경 내역</a>
+            <a href="THIRD_PARTY_NOTICES.md" target="_blank" rel="noreferrer" data-i18n="legal.thirdParty">제3자 고지와 변경 내역</a>
           </p>
         </details>
       </section>

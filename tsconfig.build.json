@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rootDir": "src",
+    "outDir": "build/extension/src",
+    "sourceMap": false,
+    "declaration": false,
+    "types": ["chrome"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "exclude": ["src/vendor/**", "test/**", "build", "dist", "node_modules"]
+}

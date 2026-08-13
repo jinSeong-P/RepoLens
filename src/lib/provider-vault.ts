@@ -1,5 +1,6 @@
 import { normalizeProviderConfig } from './provider-url.js'
 import { validateGitHubAuthRecord } from './github-auth.js'
+import type { GitHubAuthRecord } from './github-auth.js'
 
 export const PROVIDER_VAULT_FORMAT_VERSION = 1
 export const PROVIDER_VAULT_CONTENTS_VERSION = 2
@@ -57,11 +58,93 @@ const PRODUCTION_POLICY = Object.freeze({
   maxIterations: MAX_ITERATIONS,
 })
 
+type UnknownRecord = Record<PropertyKey, unknown>
+
+export interface ProviderVaultKdf {
+  name: 'PBKDF2'
+  hash: 'SHA-256'
+  iterations: number
+  salt: string
+}
+
+export interface ProviderVaultCipher {
+  name: 'AES-GCM'
+  keyLength: 256
+  tagLength: 128
+  iv: string
+}
+
+export interface ProviderVaultEnvelope {
+  formatVersion: 1
+  vaultId: string
+  keyVersion: string
+  kdf: ProviderVaultKdf
+  cipher: ProviderVaultCipher
+  ciphertext: string
+}
+
+export interface ProviderVaultPreset {
+  id: string
+  providerRef: string
+  name: string
+  baseUrl: string
+  model: string
+  apiKey: string
+  streaming: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProviderVaultHistoricalProvider {
+  providerRef: string
+  baseUrl: string
+  model: string
+}
+
+export interface ProviderVaultContents {
+  version: 2
+  revision: string
+  createdAt: string
+  updatedAt: string
+  lastActivePresetId: string | null
+  preferences: { autoLockMinutes: number }
+  presets: ProviderVaultPreset[]
+  historicalProviders: ProviderVaultHistoricalProvider[]
+  githubAuth: GitHubAuthRecord | null
+}
+
+export interface ProviderVaultPolicy {
+  readonly defaultIterations: number
+  readonly minIterations: number
+  readonly maxIterations: number
+  readonly [TEST_POLICY_BRAND]?: true
+}
+
+export interface ProviderVaultOptions {
+  policy?: ProviderVaultPolicy
+  crypto?: Crypto
+  iterations?: number
+  expectedRevision?: string
+  now?: string | number | Date | (() => string | number | Date)
+}
+
+export type ProviderVaultUpdater = (
+  draft: ProviderVaultContents,
+) => void | ProviderVaultContents | Promise<void | ProviderVaultContents>
+
+interface ProviderVaultResult {
+  envelope: ProviderVaultEnvelope
+  contents: ProviderVaultContents
+  keyMaterial: string
+}
+
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true })
 
 export class ProviderVaultError extends Error {
-  constructor(code, message) {
+  readonly code: string
+
+  constructor(code: string, message: string) {
     super(message)
     this.name = 'ProviderVaultError'
     this.code = code
@@ -73,12 +156,12 @@ export class ProviderVaultError extends Error {
  * returned policy for real vaults. Production APIs reject envelopes below
  * PROVIDER_VAULT_MIN_ITERATIONS unless this exact branded policy is supplied.
  */
-export function unsafeCreateProviderVaultTestPolicy(iterations = 1_000) {
+export function unsafeCreateProviderVaultTestPolicy(iterations = 1_000): ProviderVaultPolicy {
   if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > 100_000) {
     throw new ProviderVaultError('invalid_policy', '테스트 반복 횟수는 1~100,000 사이여야 합니다.')
   }
   return Object.freeze({
-    [TEST_POLICY_BRAND]: true,
+    [TEST_POLICY_BRAND]: true as const,
     defaultIterations: iterations,
     minIterations: 1,
     maxIterations: 100_000,
@@ -89,19 +172,22 @@ export function unsafeCreateProviderVaultTestPolicy(iterations = 1_000) {
  * Encrypts a fully formed provider-vault contents record with a new salt and
  * key version. The returned keyMaterial is an opaque, session-only capability.
  */
-export async function createProviderVault(contents, password, options = {}) {
+export async function createProviderVault(
+  contents: unknown,
+  password: unknown,
+  options: ProviderVaultOptions = {},
+): Promise<ProviderVaultResult> {
   const policy = resolvePolicy(options.policy)
   const cryptoImpl = resolveCrypto(options.crypto)
   const iterations = resolveIterations(options.iterations, policy)
   const normalizedContents = validateProviderVaultContents(contents)
   const passwordBytes = encodePassword(password, true)
   const salt = randomBytes(cryptoImpl, SALT_BYTES)
-  let rawKey
+  let rawKey: Uint8Array<ArrayBuffer> | undefined
 
   try {
     rawKey = await deriveKeyMaterial(cryptoImpl, passwordBytes, salt, iterations)
     const metadata = makeMetadata({
-      cryptoImpl,
       iterations,
       salt,
       vaultId: randomUuid(cryptoImpl),
@@ -124,13 +210,17 @@ export async function createProviderVault(contents, password, options = {}) {
  * Unlocks an envelope with a password and returns validated contents plus an
  * opaque keyMaterial string suitable only for trusted session storage.
  */
-export async function unlockProviderVault(envelope, password, options = {}) {
+export async function unlockProviderVault(
+  envelope: unknown,
+  password: unknown,
+  options: ProviderVaultOptions = {},
+): Promise<{ contents: ProviderVaultContents, keyMaterial: string }> {
   const policy = resolvePolicy(options.policy)
   const cryptoImpl = resolveCrypto(options.crypto)
   const metadata = validateProviderVaultEnvelope(envelope, { policy })
   const passwordBytes = encodePassword(password, false)
   const salt = decodeBase64Url(metadata.kdf.salt, SALT_BYTES, 'invalid_envelope')
-  let rawKey
+  let rawKey: Uint8Array<ArrayBuffer> | undefined
 
   try {
     rawKey = await deriveKeyMaterial(cryptoImpl, passwordBytes, salt, metadata.kdf.iterations)
@@ -144,7 +234,11 @@ export async function unlockProviderVault(envelope, password, options = {}) {
 }
 
 /** Unlocks without PBKDF2 by using the session capability returned at unlock. */
-export async function unlockProviderVaultWithKeyMaterial(envelope, keyMaterial, options = {}) {
+export async function unlockProviderVaultWithKeyMaterial(
+  envelope: unknown,
+  keyMaterial: unknown,
+  options: ProviderVaultOptions = {},
+): Promise<ProviderVaultContents> {
   const policy = resolvePolicy(options.policy)
   const cryptoImpl = resolveCrypto(options.crypto)
   const metadata = validateProviderVaultEnvelope(envelope, { policy })
@@ -161,13 +255,23 @@ export async function unlockProviderVaultWithKeyMaterial(envelope, keyMaterial, 
  * return undefined, or return a replacement record. Salt/keyVersion stay the
  * same while AES-GCM always receives a fresh IV.
  */
-export async function updateProviderVault(envelope, password, updater, options = {}) {
+export async function updateProviderVault(
+  envelope: unknown,
+  password: unknown,
+  updater: ProviderVaultUpdater,
+  options: ProviderVaultOptions = {},
+): Promise<ProviderVaultResult> {
   const unlocked = await unlockProviderVault(envelope, password, options)
   return updateProviderVaultWithKeyMaterial(envelope, unlocked.keyMaterial, updater, options)
 }
 
 /** Session-optimized counterpart of updateProviderVault. */
-export async function updateProviderVaultWithKeyMaterial(envelope, keyMaterial, updater, options = {}) {
+export async function updateProviderVaultWithKeyMaterial(
+  envelope: unknown,
+  keyMaterial: unknown,
+  updater: ProviderVaultUpdater,
+  options: ProviderVaultOptions = {},
+): Promise<ProviderVaultResult> {
   if (typeof updater !== 'function') {
     throw new ProviderVaultError('invalid_update', '볼트 업데이트 함수가 필요합니다.')
   }
@@ -199,7 +303,7 @@ export async function updateProviderVaultWithKeyMaterial(envelope, keyMaterial, 
       updatedAt: now,
     })
     const nextEnvelope = await encryptContents(cryptoImpl, metadata, next, rawKey)
-    return { envelope: nextEnvelope, contents: next, keyMaterial }
+    return { envelope: nextEnvelope, contents: next, keyMaterial: encodeBase64Url(rawKey) }
   } finally {
     rawKey.fill(0)
   }
@@ -209,7 +313,12 @@ export async function updateProviderVaultWithKeyMaterial(envelope, keyMaterial, 
  * Changes the master password. A new salt, key version, IV, and derived key
  * are created; the vault ID and decrypted contents are preserved.
  */
-export async function reencryptProviderVault(envelope, currentPassword, nextPassword, options = {}) {
+export async function reencryptProviderVault(
+  envelope: unknown,
+  currentPassword: unknown,
+  nextPassword: unknown,
+  options: ProviderVaultOptions = {},
+): Promise<ProviderVaultResult> {
   const policy = resolvePolicy(options.policy)
   const cryptoImpl = resolveCrypto(options.crypto)
   const currentMetadata = validateProviderVaultEnvelope(envelope, { policy })
@@ -217,12 +326,11 @@ export async function reencryptProviderVault(envelope, currentPassword, nextPass
   const passwordBytes = encodePassword(nextPassword, true)
   const iterations = resolveIterations(options.iterations, policy)
   const salt = randomBytes(cryptoImpl, SALT_BYTES)
-  let rawKey
+  let rawKey: Uint8Array<ArrayBuffer> | undefined
 
   try {
     rawKey = await deriveKeyMaterial(cryptoImpl, passwordBytes, salt, iterations)
     const metadata = makeMetadata({
-      cryptoImpl,
       iterations,
       salt,
       vaultId: currentMetadata.vaultId,
@@ -242,7 +350,10 @@ export async function reencryptProviderVault(envelope, currentPassword, nextPass
 }
 
 /** Strictly validates and clones the public envelope metadata. */
-export function validateProviderVaultEnvelope(value, options = {}) {
+export function validateProviderVaultEnvelope(
+  value: unknown,
+  options: Pick<ProviderVaultOptions, 'policy'> = {},
+): ProviderVaultEnvelope {
   const policy = resolvePolicy(options.policy)
   if (!isPlainObject(value) || !hasExactKeys(value, ENVELOPE_KEYS)) {
     throw new ProviderVaultError('invalid_envelope', '암호화 볼트 형식이 올바르지 않습니다.')
@@ -259,7 +370,7 @@ export function validateProviderVaultEnvelope(value, options = {}) {
   if (value.kdf.name !== 'PBKDF2' || value.kdf.hash !== 'SHA-256') {
     throw new ProviderVaultError('unsupported_algorithm', '지원하지 않는 볼트 키 파생 방식입니다.')
   }
-  if (!Number.isSafeInteger(value.kdf.iterations)
+  if (typeof value.kdf.iterations !== 'number' || !Number.isSafeInteger(value.kdf.iterations)
     || value.kdf.iterations < policy.minIterations
     || value.kdf.iterations > policy.maxIterations) {
     throw new ProviderVaultError('unsafe_parameters', '볼트 키 파생 반복 횟수가 허용 범위를 벗어났습니다.')
@@ -280,17 +391,17 @@ export function validateProviderVaultEnvelope(value, options = {}) {
     throw new ProviderVaultError('invalid_envelope', '볼트 암호문이 비어 있거나 너무 짧습니다.')
   }
 
-  return structuredClone(value)
+  return structuredClone(value) as unknown as ProviderVaultEnvelope
 }
 
 /** Strictly validates, normalizes, and clones decrypted provider data. */
-export function validateProviderVaultContents(value) {
+export function validateProviderVaultContents(value: unknown): ProviderVaultContents {
   if (!isPlainObject(value)) {
     throw new ProviderVaultError('invalid_contents', '암호화 볼트 내용 형식이 올바르지 않습니다.')
   }
   const legacy = value.version === 1 && hasExactKeys(value, LEGACY_CONTENT_KEYS)
   const current = value.version === PROVIDER_VAULT_CONTENTS_VERSION && hasExactKeys(value, CONTENT_KEYS)
-  if (!legacy && !current && ![1, PROVIDER_VAULT_CONTENTS_VERSION].includes(value.version)) {
+  if (!legacy && !current && value.version !== 1 && value.version !== PROVIDER_VAULT_CONTENTS_VERSION) {
     throw new ProviderVaultError('unsupported_contents_version', '지원하지 않는 볼트 내용 버전입니다.')
   }
   if (!legacy && !current) {
@@ -307,7 +418,8 @@ export function validateProviderVaultContents(value) {
     throw new ProviderVaultError('invalid_contents', '볼트 잠금 설정이 올바르지 않습니다.')
   }
   const autoLockMinutes = value.preferences.autoLockMinutes
-  if (!Number.isSafeInteger(autoLockMinutes) || autoLockMinutes < 0 || autoLockMinutes > 1_440) {
+  if (typeof autoLockMinutes !== 'number' || !Number.isSafeInteger(autoLockMinutes)
+    || autoLockMinutes < 0 || autoLockMinutes > 1_440) {
     throw new ProviderVaultError('invalid_contents', '자동 잠금 시간은 0~1,440분 사이여야 합니다.')
   }
 
@@ -320,8 +432,8 @@ export function validateProviderVaultContents(value) {
   }
 
   const historicalProviders = value.historicalProviders.map(validateHistoricalProvider)
-  const referenceMap = new Map()
-  const identityMap = new Map()
+  const referenceMap = new Map<string, ProviderVaultHistoricalProvider>()
+  const identityMap = new Map<string, string>()
   for (const provider of historicalProviders) {
     if (referenceMap.has(provider.providerRef)) {
       throw new ProviderVaultError('invalid_contents', '중복된 providerRef가 있습니다.')
@@ -334,7 +446,7 @@ export function validateProviderVaultContents(value) {
     identityMap.set(identity, provider.providerRef)
   }
 
-  const presetIds = new Set()
+  const presetIds = new Set<string>()
   const presets = value.presets.map((preset) => {
     const normalized = validatePreset(preset)
     if (presetIds.has(normalized.id)) {
@@ -348,10 +460,15 @@ export function validateProviderVaultContents(value) {
     return normalized
   })
 
-  const lastActivePresetId = value.lastActivePresetId
-  if (lastActivePresetId !== null
-    && (typeof lastActivePresetId !== 'string' || !presetIds.has(lastActivePresetId))) {
-    throw new ProviderVaultError('invalid_contents', '활성 프리셋 ID가 저장된 프리셋과 일치하지 않습니다.')
+  const lastActivePresetIdValue = value.lastActivePresetId
+  let lastActivePresetId: string | null
+  if (lastActivePresetIdValue === null) {
+    lastActivePresetId = null
+  } else {
+    if (typeof lastActivePresetIdValue !== 'string' || !presetIds.has(lastActivePresetIdValue)) {
+      throw new ProviderVaultError('invalid_contents', '활성 프리셋 ID가 저장된 프리셋과 일치하지 않습니다.')
+    }
+    lastActivePresetId = lastActivePresetIdValue
   }
 
   return {
@@ -367,7 +484,12 @@ export function validateProviderVaultContents(value) {
   }
 }
 
-async function encryptContents(cryptoImpl, metadata, contents, rawKey) {
+async function encryptContents(
+  cryptoImpl: Crypto,
+  metadata: Omit<ProviderVaultEnvelope, 'cipher' | 'ciphertext'>,
+  contents: unknown,
+  rawKey: Uint8Array<ArrayBuffer>,
+): Promise<ProviderVaultEnvelope> {
   const normalized = validateProviderVaultContents(contents)
   const plaintext = encoder.encode(JSON.stringify(normalized))
   if (plaintext.length > MAX_CONTENT_BYTES) {
@@ -376,12 +498,12 @@ async function encryptContents(cryptoImpl, metadata, contents, rawKey) {
   }
 
   const iv = randomBytes(cryptoImpl, IV_BYTES)
-  const envelope = {
+  const envelope: ProviderVaultEnvelope = {
     ...metadata,
     cipher: {
       name: 'AES-GCM',
-      keyLength: AES_KEY_BYTES * 8,
-      tagLength: TAG_LENGTH_BITS,
+      keyLength: 256,
+      tagLength: 128,
       iv: encodeBase64Url(iv),
     },
     ciphertext: '',
@@ -411,11 +533,15 @@ async function encryptContents(cryptoImpl, metadata, contents, rawKey) {
   }
 }
 
-async function decryptContents(cryptoImpl, envelope, rawKey) {
+async function decryptContents(
+  cryptoImpl: Crypto,
+  envelope: ProviderVaultEnvelope,
+  rawKey: Uint8Array<ArrayBuffer>,
+): Promise<ProviderVaultContents> {
   const iv = decodeBase64Url(envelope.cipher.iv, IV_BYTES, 'invalid_envelope')
   const ciphertext = decodeBase64Url(envelope.ciphertext, null, 'invalid_envelope', MAX_CONTENT_BYTES + TAG_LENGTH_BITS / 8)
   const aad = canonicalAad(envelope)
-  let plaintext
+  let plaintext: Uint8Array<ArrayBuffer>
 
   try {
     const key = await importAesKey(cryptoImpl, rawKey)
@@ -444,7 +570,12 @@ async function decryptContents(cryptoImpl, envelope, rawKey) {
   }
 }
 
-async function deriveKeyMaterial(cryptoImpl, passwordBytes, salt, iterations) {
+async function deriveKeyMaterial(
+  cryptoImpl: Crypto,
+  passwordBytes: Uint8Array<ArrayBuffer>,
+  salt: Uint8Array<ArrayBuffer>,
+  iterations: number,
+): Promise<Uint8Array<ArrayBuffer>> {
   try {
     const passwordKey = await cryptoImpl.subtle.importKey('raw', passwordBytes, 'PBKDF2', false, ['deriveBits'])
     const bits = await cryptoImpl.subtle.deriveBits({
@@ -459,11 +590,21 @@ async function deriveKeyMaterial(cryptoImpl, passwordBytes, salt, iterations) {
   }
 }
 
-async function importAesKey(cryptoImpl, rawKey) {
+async function importAesKey(cryptoImpl: Crypto, rawKey: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   return cryptoImpl.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 }
 
-function makeMetadata({ iterations, salt, vaultId, keyVersion }) {
+function makeMetadata({
+  iterations,
+  salt,
+  vaultId,
+  keyVersion,
+}: {
+  iterations: number
+  salt: Uint8Array<ArrayBuffer>
+  vaultId: string
+  keyVersion: string
+}): Omit<ProviderVaultEnvelope, 'cipher' | 'ciphertext'> {
   return {
     formatVersion: PROVIDER_VAULT_FORMAT_VERSION,
     vaultId,
@@ -477,7 +618,7 @@ function makeMetadata({ iterations, salt, vaultId, keyVersion }) {
   }
 }
 
-function canonicalAad(envelope) {
+function canonicalAad(envelope: ProviderVaultEnvelope): Uint8Array<ArrayBuffer> {
   return encoder.encode(JSON.stringify({
     context: 'RepoLens provider vault',
     formatVersion: envelope.formatVersion,
@@ -498,7 +639,7 @@ function canonicalAad(envelope) {
   }))
 }
 
-function validatePreset(value) {
+function validatePreset(value: unknown): ProviderVaultPreset {
   if (!isPlainObject(value) || !hasExactKeys(value, PRESET_KEYS)) {
     throw new ProviderVaultError('invalid_contents', 'AI 프리셋 형식이 올바르지 않습니다.')
   }
@@ -528,7 +669,7 @@ function validatePreset(value) {
   }
 }
 
-function validateHistoricalProvider(value) {
+function validateHistoricalProvider(value: unknown): ProviderVaultHistoricalProvider {
   if (!isPlainObject(value) || !hasExactKeys(value, HISTORICAL_PROVIDER_KEYS)) {
     throw new ProviderVaultError('invalid_contents', 'Provider 기록 형식이 올바르지 않습니다.')
   }
@@ -537,7 +678,7 @@ function validateHistoricalProvider(value) {
   return { providerRef: value.providerRef, baseUrl: provider.baseUrl, model: provider.model }
 }
 
-function validateGitHubAuth(value) {
+function validateGitHubAuth(value: unknown): GitHubAuthRecord | null {
   if (value === null) return null
   if (!isPlainObject(value) || !hasExactKeys(value, GITHUB_AUTH_KEYS)) {
     throw new ProviderVaultError('invalid_contents', 'GitHub 연결 정보 형식이 올바르지 않습니다.')
@@ -549,7 +690,7 @@ function validateGitHubAuth(value) {
   }
 }
 
-function validateCanonicalProvider(value) {
+function validateCanonicalProvider(value: UnknownRecord) {
   assertBoundedString(value.baseUrl, 'API 기준 URL', 1, MAX_BASE_URL_LENGTH)
   assertBoundedString(value.model, 'Model ID', 1, MAX_MODEL_LENGTH)
   let normalized
@@ -564,27 +705,32 @@ function validateCanonicalProvider(value) {
   return normalized
 }
 
-function providerIdentity(provider) {
+function providerIdentity(provider: { baseUrl: string, model: string }): string {
   return `${provider.baseUrl}\u0000${provider.model}`
 }
 
-function resolveCrypto(candidate) {
+function resolveCrypto(candidate: unknown): Crypto {
   const cryptoImpl = candidate ?? globalThis.crypto
-  if (!cryptoImpl?.subtle || typeof cryptoImpl.getRandomValues !== 'function') {
+  if (!cryptoImpl || typeof cryptoImpl !== 'object'
+    || !('subtle' in cryptoImpl) || !cryptoImpl.subtle
+    || !('getRandomValues' in cryptoImpl) || typeof cryptoImpl.getRandomValues !== 'function') {
     throw new ProviderVaultError('crypto_unavailable', '이 환경은 Web Crypto를 지원하지 않습니다.')
   }
-  return cryptoImpl
+  return cryptoImpl as Crypto
 }
 
-function resolvePolicy(candidate) {
+function resolvePolicy(candidate: unknown): ProviderVaultPolicy {
   if (candidate === undefined || candidate === PRODUCTION_POLICY) return PRODUCTION_POLICY
-  if (isPlainObject(candidate) && candidate[TEST_POLICY_BRAND] === true) return candidate
+  if (isPlainObject(candidate) && candidate[TEST_POLICY_BRAND] === true
+    && typeof candidate.defaultIterations === 'number'
+    && typeof candidate.minIterations === 'number'
+    && typeof candidate.maxIterations === 'number') return candidate as unknown as ProviderVaultPolicy
   throw new ProviderVaultError('invalid_policy', '볼트 암호 정책이 올바르지 않습니다.')
 }
 
-function resolveIterations(candidate, policy) {
+function resolveIterations(candidate: unknown, policy: ProviderVaultPolicy): number {
   const iterations = candidate ?? policy.defaultIterations
-  if (!Number.isSafeInteger(iterations)
+  if (typeof iterations !== 'number' || !Number.isSafeInteger(iterations)
     || iterations < policy.minIterations
     || iterations > policy.maxIterations) {
     throw new ProviderVaultError('unsafe_parameters', '볼트 키 파생 반복 횟수가 허용 범위를 벗어났습니다.')
@@ -592,7 +738,7 @@ function resolveIterations(candidate, policy) {
   return iterations
 }
 
-function encodePassword(password, creating) {
+function encodePassword(password: unknown, creating: boolean): Uint8Array<ArrayBuffer> {
   if (typeof password !== 'string') {
     throw new ProviderVaultError('password_policy', '마스터 비밀번호를 입력해 주세요.')
   }
@@ -612,17 +758,17 @@ function encodePassword(password, creating) {
   return bytes
 }
 
-function decodeKeyMaterial(value) {
+function decodeKeyMaterial(value: unknown): Uint8Array<ArrayBuffer> {
   return decodeBase64Url(value, AES_KEY_BYTES, 'invalid_key_material')
 }
 
-function randomBytes(cryptoImpl, length) {
+function randomBytes(cryptoImpl: Crypto, length: number): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(length)
   cryptoImpl.getRandomValues(bytes)
   return bytes
 }
 
-function randomUuid(cryptoImpl) {
+function randomUuid(cryptoImpl: Crypto): string {
   const bytes = randomBytes(cryptoImpl, 16)
   bytes[6] = (bytes[6] & 0x0f) | 0x40
   bytes[8] = (bytes[8] & 0x3f) | 0x80
@@ -631,7 +777,7 @@ function randomUuid(cryptoImpl) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-function encodeBase64Url(bytes) {
+function encodeBase64Url(bytes: Uint8Array<ArrayBuffer>): string {
   let binary = ''
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
@@ -639,7 +785,12 @@ function encodeBase64Url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
-function decodeBase64Url(value, expectedLength, code, maxLength = expectedLength) {
+function decodeBase64Url(
+  value: unknown,
+  expectedLength: number | null,
+  code: string,
+  maxLength: number | null = expectedLength,
+): Uint8Array<ArrayBuffer> {
   if (typeof value !== 'string' || !value || !BASE64URL_PATTERN.test(value)) {
     throw new ProviderVaultError(code, '볼트의 Base64URL 값이 올바르지 않습니다.')
   }
@@ -647,7 +798,7 @@ function decodeBase64Url(value, expectedLength, code, maxLength = expectedLength
     throw new ProviderVaultError(code, '볼트 데이터가 안전한 크기 제한을 초과했습니다.')
   }
   const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
-  let binary
+  let binary: string
   try {
     binary = atob(padded)
   } catch {
@@ -665,19 +816,25 @@ function decodeBase64Url(value, expectedLength, code, maxLength = expectedLength
   return bytes
 }
 
-function assertUuid(value, field, code) {
+function assertUuid(value: unknown, field: string, code: string): asserts value is string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
     throw new ProviderVaultError(code, `${field} 형식이 올바르지 않습니다.`)
   }
 }
 
-function assertTimestamp(value, field) {
+function assertTimestamp(value: unknown, field: string): asserts value is string {
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
     throw new ProviderVaultError('invalid_contents', `${field} 시각 형식이 올바르지 않습니다.`)
   }
 }
 
-function assertBoundedString(value, label, min, max, options = {}) {
+function assertBoundedString(
+  value: unknown,
+  label: string,
+  min: number,
+  max: number,
+  options: { trimmed?: boolean, controls?: boolean } = {},
+): asserts value is string {
   if (typeof value !== 'string' || value.length < min || value.length > max) {
     throw new ProviderVaultError('invalid_contents', `${label} 길이가 올바르지 않습니다.`)
   }
@@ -689,7 +846,7 @@ function assertBoundedString(value, label, min, max, options = {}) {
   }
 }
 
-function currentTimestamp(now) {
+function currentTimestamp(now: ProviderVaultOptions['now']): string {
   const value = now === undefined
     ? new Date()
     : typeof now === 'function'
@@ -701,12 +858,12 @@ function currentTimestamp(now) {
   return value.toISOString()
 }
 
-function hasExactKeys(value, expected) {
+function hasExactKeys(value: UnknownRecord, expected: readonly PropertyKey[]): boolean {
   const actual = Object.keys(value).sort()
   return actual.length === expected.length && actual.every((key, index) => key === expected[index])
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is UnknownRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null

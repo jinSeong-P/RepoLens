@@ -11,6 +11,16 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
 
 - Public-repository documentation for privacy, security reporting,
   contribution, community conduct, issue forms, and pull requests.
+- Strict TypeScript source and a deterministic local build that emits the
+  unpacked extension to `build/extension`.
+- Korean and English UI catalogs, Chrome manifest locales, and independent AI
+  output-language selection.
+
+### Changed
+
+- Source checkouts now require `npm ci` and `npm run build`; Chrome loads the
+  generated `build/extension` directory. Release ZIPs continue to contain only
+  executable JavaScript and required runtime/static files.
 
 ## [0.1.0] - 2026-08-13
 

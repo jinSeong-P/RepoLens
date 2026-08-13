@@ -21,17 +21,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
-      - name: Check manifest and tests
+      - name: Install development dependencies
+        run: npm ci
+
+      - name: Check types, tests, and extension build
         run: npm run check
 
-      - name: Build reproducible extension archive
+      - name: Package extension archive
         run: |
-          npm run package:extension
-          sha256sum dist/repolens-extension-*.zip > /tmp/repolens-sha256
-          npm run package:extension
-          sha256sum --check /tmp/repolens-sha256
-          cp /tmp/repolens-sha256 dist/SHA256SUMS
+          node scripts/package-extension.mjs build/extension
+          cd dist
+          sha256sum repolens-extension-*.zip > SHA256SUMS
 
       - name: Upload extension archive
         uses: actions/upload-artifact@v4

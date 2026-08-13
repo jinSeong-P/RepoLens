@@ -4,7 +4,18 @@
  * PocketRisu is Copyright (C) 2024 Kwaroran and licensed under GPL v3.
  */
 
-export async function* parseSseStream(input) {
+export interface SseEvent {
+  event: string | undefined
+  data: string
+  id: string | undefined
+}
+
+interface EventBoundary {
+  start: number
+  end: number
+}
+
+export async function* parseSseStream(input: ReadableStream<Uint8Array>): AsyncGenerator<SseEvent, void, undefined> {
   const maxBufferChars = 2_000_000
   const reader = input.getReader()
   const decoder = new TextDecoder('utf-8')
@@ -26,12 +37,12 @@ export async function* parseSseStream(input) {
   }
 }
 
-export function parseSseEventBlock(raw) {
+export function parseSseEventBlock(raw: string): SseEvent | null {
   if (raw.length === 0) return null
   const lines = raw.split(/\r\n|\n|\r/)
-  let event
-  let id
-  const dataLines = []
+  let event: string | undefined
+  let id: string | undefined
+  const dataLines: string[] = []
   let sawField = false
 
   for (const line of lines) {
@@ -51,7 +62,7 @@ export function parseSseEventBlock(raw) {
   return { event, data: dataLines.join('\n'), id }
 }
 
-function* drainEvents(buffer, flushTrailing) {
+function* drainEvents(buffer: string, flushTrailing: boolean): Generator<SseEvent, void, undefined> {
   let scan = buffer
   while (true) {
     const boundary = findEventBoundary(scan)
@@ -69,7 +80,7 @@ function* drainEvents(buffer, flushTrailing) {
   }
 }
 
-function remainderAfterDrain(buffer) {
+function remainderAfterDrain(buffer: string): string {
   let scan = buffer
   while (true) {
     const boundary = findEventBoundary(scan)
@@ -78,8 +89,8 @@ function remainderAfterDrain(buffer) {
   }
 }
 
-function findEventBoundary(buffer) {
-  let best = null
+function findEventBoundary(buffer: string): EventBoundary | null {
+  let best: EventBoundary | null = null
   for (const delimiter of ['\r\n\r\n', '\n\n', '\r\r']) {
     const index = buffer.indexOf(delimiter)
     if (index !== -1 && (best === null || index < best.start)) {

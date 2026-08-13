@@ -8,12 +8,63 @@
  */
 
 import { chatCompletionsUrl, normalizeProviderConfig } from './provider-url.js'
+import type { ProviderConfigInput } from './provider-url.js'
 import { parseSseStream } from './sse.js'
 
 const MAX_OUTPUT_CHARS = 1_500_000
 
+export type AiRequestErrorCode =
+  | 'auth'
+  | 'request'
+  | 'parse'
+  | 'limit'
+  | 'cancelled'
+  | 'network'
+  | 'not_found'
+  | 'rate_limit'
+  | 'provider'
+
+export interface AiRequestErrorOptions {
+  status?: number
+  requestId?: string
+}
+
+export interface ChatRequestOptions {
+  config: ProviderConfigInput | null | undefined
+  apiKey: unknown
+  messages: unknown
+  signal?: AbortSignal
+  onDelta?: (delta: string) => void
+  fetchImpl?: typeof fetch
+}
+
+export interface ChatResult {
+  text: string
+  streamed: boolean
+}
+
+interface ChatRequestBody {
+  model: string
+  messages: unknown[]
+  stream: boolean
+}
+
+interface FetchOptions {
+  fetchImpl: typeof fetch
+  url: string
+  apiKey: string
+  signal?: AbortSignal
+  body: ChatRequestBody
+}
+
+type UnknownRecord = Record<string, unknown>
+
 export class AiRequestError extends Error {
-  constructor(code, message, options = {}) {
+  readonly code: AiRequestErrorCode
+  readonly status: number | undefined
+  readonly requestId: string | undefined
+
+  constructor(code: AiRequestErrorCode, message: string, options: AiRequestErrorOptions = {}) {
     super(message)
     this.name = 'AiRequestError'
     this.code = code
@@ -22,7 +73,14 @@ export class AiRequestError extends Error {
   }
 }
 
-export async function requestChat({ config, apiKey, messages, signal, onDelta, fetchImpl = fetch }) {
+export async function requestChat({
+  config,
+  apiKey,
+  messages,
+  signal,
+  onDelta,
+  fetchImpl = fetch,
+}: ChatRequestOptions): Promise<ChatResult> {
   const normalized = normalizeProviderConfig(config)
   if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
     throw new AiRequestError('auth', '이 세션에 API 키가 없습니다.')
@@ -30,7 +88,6 @@ export async function requestChat({ config, apiKey, messages, signal, onDelta, f
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new AiRequestError('request', 'AI 요청 메시지가 비어 있습니다.')
   }
-
   const response = await performFetch({
     fetchImpl,
     url: chatCompletionsUrl(normalized.baseUrl),
@@ -83,7 +140,7 @@ export async function requestChat({ config, apiKey, messages, signal, onDelta, f
   return { text, streamed: true }
 }
 
-async function performFetch({ fetchImpl, url, apiKey, signal, body }) {
+async function performFetch({ fetchImpl, url, apiKey, signal, body }: FetchOptions): Promise<Response> {
   try {
     return await fetchImpl(url, {
       method: 'POST',
@@ -97,14 +154,14 @@ async function performFetch({ fetchImpl, url, apiKey, signal, body }) {
       signal,
     })
   } catch (error) {
-    if (signal?.aborted || error?.name === 'AbortError') {
+    if (signal?.aborted || errorName(error) === 'AbortError') {
       throw new AiRequestError('cancelled', '요청이 중지되었습니다.')
     }
     throw new AiRequestError('network', 'AI 서버에 연결할 수 없습니다. 주소와 네트워크 상태를 확인해 주세요.')
   }
 }
 
-async function readJsonResponse(response) {
+async function readJsonResponse(response: Response): Promise<unknown> {
   try {
     return await response.json()
   } catch {
@@ -112,7 +169,7 @@ async function readJsonResponse(response) {
   }
 }
 
-function parseJsonResponse(raw, streamed) {
+function parseJsonResponse(raw: unknown, streamed: boolean): ChatResult {
   if (!isPlainObject(raw) || !Array.isArray(raw.choices) || raw.choices.length === 0) {
     throw new AiRequestError('parse', 'AI 응답에 choices가 없습니다.')
   }
@@ -125,7 +182,7 @@ function parseJsonResponse(raw, streamed) {
   return { text: content, streamed }
 }
 
-function extractMessageContent(content) {
+function extractMessageContent(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
@@ -133,19 +190,19 @@ function extractMessageContent(content) {
     .join('')
 }
 
-export function extractStreamText(raw) {
+export function extractStreamText(raw: unknown): string {
   if (!isPlainObject(raw) || !Array.isArray(raw.choices) || raw.choices.length === 0) return ''
   const first = raw.choices[0]
   if (!isPlainObject(first) || !isPlainObject(first.delta)) return ''
   return extractMessageContent(first.delta.content)
 }
 
-async function deriveHttpError(response, apiKey) {
+async function deriveHttpError(response: Response, apiKey: string): Promise<AiRequestError> {
   let message = `AI 서버가 HTTP ${response.status}로 응답했습니다.`
   try {
     const body = (await response.text()).slice(0, 8_000)
     const parsed = JSON.parse(body)
-    const candidate = parsed?.error?.message ?? parsed?.message
+    const candidate = errorMessageCandidate(parsed)
     if (typeof candidate === 'string' && candidate.trim()) message = candidate.trim()
   } catch {
     // Status-based message remains safe and useful.
@@ -167,6 +224,16 @@ async function deriveHttpError(response, apiKey) {
   return new AiRequestError(code, message, { status, requestId })
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function errorName(error: unknown): string | undefined {
+  return isPlainObject(error) && typeof error.name === 'string' ? error.name : undefined
+}
+
+function errorMessageCandidate(value: unknown): unknown {
+  if (!isPlainObject(value)) return undefined
+  if (isPlainObject(value.error) && typeof value.error.message === 'string') return value.error.message
+  return value.message
 }

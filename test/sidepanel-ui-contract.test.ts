@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const sidepanelSource = readFileSync(
-  fileURLToPath(new URL('../src/sidepanel.js', import.meta.url)),
+  fileURLToPath(new URL('../src/sidepanel.ts', import.meta.url)),
   'utf8',
 )
 const sidepanelHtml = readFileSync(
@@ -23,6 +23,54 @@ function sourceBetween(startMarker, endMarker) {
   assert.notEqual(end, -1, `missing source marker: ${endMarker}`)
   return sidepanelSource.slice(start, end)
 }
+
+test('language settings expose independent UI and AI output locale selectors', () => {
+  const form = sidepanelHtml.match(/<form\b[^>]*\bid=["']language-settings-form["'][^>]*>[\s\S]*?<\/form>/)?.[0] ?? ''
+  const uiSelect = form.match(/<select\b[^>]*\bid=["']ui-locale["'][^>]*>[\s\S]*?<\/select>/)?.[0] ?? ''
+  const outputSelect = form.match(/<select\b[^>]*\bid=["']ai-output-locale["'][^>]*>[\s\S]*?<\/select>/)?.[0] ?? ''
+
+  assert.match(uiSelect, /name=["']uiLocale["']/)
+  assert.match(outputSelect, /name=["']aiOutputLocale["']/)
+  for (const select of [uiSelect, outputSelect]) {
+    assert.match(select, /<option\b[^>]*\bvalue=["']ko["']/)
+    assert.match(select, /<option\b[^>]*\bvalue=["']en["']/)
+  }
+  assert.match(form, /data-i18n=["']locale\.uiLabel["']/)
+  assert.match(form, /data-i18n=["']locale\.outputLabel["']/)
+})
+
+test('language changes normalize, apply immediately, persist, and rerender the active view', () => {
+  const listenerSource = sourceBetween('homeButton.addEventListener', 'chrome.tabs.onActivated.addListener')
+  const source = sourceBetween('async function loadUiPreferences', 'async function loadAnalysisSettings')
+  const saveIndex = source.indexOf('async function saveLanguageSettings')
+  const applyIndex = source.indexOf('applyUiPreferences(nextPreferences, { rerender: true })', saveIndex)
+  const persistIndex = source.indexOf('chrome.storage.local.set({ [UI_PREFERENCES_STORAGE_KEY]: nextPreferences })', saveIndex)
+
+  assert.match(listenerSource, /languageSettingsForm\?\.addEventListener\(['"]change['"], saveLanguageSettings\)/)
+  assert.match(source, /chrome\.storage\.local\.get\(UI_PREFERENCES_STORAGE_KEY\)/)
+  assert.match(source, /normalizeUiPreferences\(stored\[UI_PREFERENCES_STORAGE_KEY\]\)/)
+  assert.match(source, /uiLocale:\s*uiLocaleSelect\?\.value/)
+  assert.match(source, /aiOutputLocale:\s*aiOutputLocaleSelect\?\.value/)
+  assert.ok(saveIndex < applyIndex && applyIndex < persistIndex, 'language settings should apply before storage completes')
+  assert.match(source, /document\.documentElement\.lang = preferences\.uiLocale/)
+  assert.match(source, /localizeStaticInterface\(\)/)
+  assert.match(source, /if \(rerender\) rerenderLocalizedView\(\)/)
+  assert.match(source, /if \(state\.view === ['"]report['"] && state\.currentRecord\) openReport\(state\.currentRecord\)/)
+})
+
+test('AI output locale is snapshotted into prompts, report records, and cache lookups', () => {
+  const startSource = sourceBetween('async function startAnalysis', 'function collectRepository')
+  const lookupSource = sourceBetween('async function findCurrentAnalysisRecords', 'function resolveRepository')
+  const questionSource = sourceBetween('async function askQuestion', 'function renderCitations')
+
+  assert.match(startSource, /const outputLocaleSnapshot = state\.uiPreferences\.aiOutputLocale/)
+  assert.match(startSource, /buildAnalysisMessages\([\s\S]*?\{ outputLocale: outputLocaleSnapshot \}\)/)
+  assert.match(startSource, /makeReportKey\(\{[\s\S]*?outputLocale: outputLocaleSnapshot/)
+  assert.match(startSource, /outputLocale: outputLocaleSnapshot/)
+  assert.match(lookupSource, /outputLocale: state\.uiPreferences\.aiOutputLocale/)
+  assert.match(questionSource, /const outputLocale = record\.outputLocale === ['"]en['"] \? ['"]en['"] : ['"]ko['"]/)
+  assert.match(questionSource, /buildQuestionMessages\([\s\S]*?\{ outputLocale \}\)/)
+})
 
 test('selecting a provider preset only hydrates the editor', () => {
   const source = sourceBetween('function selectPreset()', 'async function deleteCurrentPreset')
@@ -91,45 +139,36 @@ test('API key visibility starts hidden and stays synchronized with its toggle', 
   const toggleSource = sourceBetween('function toggleKeyVisibility', 'function renderContextError')
 
   assert.match(apiKeyTag, /type=["']password["']/)
-  assert.match(toggleTag, /aria-label=["']API 키 표시["']/)
+  assert.match(toggleTag, /data-i18n-aria-label=["']provider\.apiKeyShowAria["']/)
   assert.match(toggleTag, /aria-pressed=["']false["']/)
 
   for (const source of [clearSource, hydrateSource]) {
     assert.match(source, /providerForm\.elements\.apiKey\.type\s*=\s*['"]password['"]/)
-    assert.match(source, /toggle\.setAttribute\(['"]aria-label['"], ['"]API 키 표시['"]\)/)
     assert.match(source, /toggle\.setAttribute\(['"]aria-pressed['"], ['"]false['"]\)/)
   }
 
   assert.match(toggleSource, /const showing = input\.type === ['"]text['"]/)
   assert.match(toggleSource, /input\.type = showing \? ['"]password['"] : ['"]text['"]/)
-  assert.match(
-    toggleSource,
-    /buttonElement\.setAttribute\(['"]aria-label['"], showing \? ['"]API 키 표시['"] : ['"]API 키 숨기기['"]\)/,
-  )
+  assert.match(toggleSource, /buttonElement\.textContent = showing \? t\(['"]common\.show['"]\) : t\(['"]common\.hide['"]\)/)
+  assert.match(toggleSource, /buttonElement\.setAttribute\(['"]aria-label['"],\s*showing \? t\(['"]provider\.apiKeyShowAria['"]\) : t\(['"]provider\.apiKeyHideAria['"]\)\)/)
   assert.match(toggleSource, /buttonElement\.setAttribute\(['"]aria-pressed['"], String\(!showing\)\)/)
 })
 
 test('history actions identify their repository and confirm before deletion', () => {
   const source = sourceBetween('async function openHistory', 'async function openSettings')
-  const confirmationIndex = source.indexOf('confirm(`${record.repository.fullName} 분석 기록을 삭제할까요?`)')
+  const confirmationIndex = source.indexOf('confirm(')
   const deletionIndex = source.indexOf('deleteReport(record.key)')
 
-  assert.match(
-    source,
-    /button\(['"]열기['"][\s\S]*?['"]aria-label['"]:\s*`\$\{record\.repository\.fullName\} 분석 열기`/,
-  )
-  assert.match(
-    source,
-    /button\(['"]삭제['"][\s\S]*?['"]aria-label['"]:\s*`\$\{record\.repository\.fullName\} 분석 삭제`/,
-  )
+  assert.match(source, /button\([\s\S]*?\(\) => openReport\(record\)[\s\S]*?['"]aria-label['"]:/)
+  assert.match(source, /button\([\s\S]*?deleteReport\(record\.key\)[\s\S]*?['"]aria-label['"]:/)
   assert.notEqual(confirmationIndex, -1)
   assert.notEqual(deletionIndex, -1)
   assert.ok(confirmationIndex < deletionIndex, 'history deletion must be confirmed before deleting the record')
 })
 
-test('analysis scope exposes the shared default, safe range, and fixed character budget', () => {
+test('analysis scope exposes the shared default, safe range, and fixed character budget contract', () => {
   const input = sidepanelHtml.match(/<input\b[^>]*\bid=["']analysis-max-files["'][^>]*>/)?.[0] ?? ''
-  const help = sidepanelHtml.match(/<p\b[^>]*\bid=["']analysis-max-files-help["'][^>]*>([\s\S]*?)<\/p>/)?.[1] ?? ''
+  const helpTag = sidepanelHtml.match(/<p\b[^>]*\bid=["']analysis-max-files-help["'][^>]*>/)?.[0] ?? ''
   const presetValues = [...sidepanelHtml.matchAll(/<input\b[^>]*\bname=["']maxFilesPreset["'][^>]*\bvalue=["'](\d+)["'][^>]*>/g)]
     .map((match) => match[1])
   const collectSource = sourceBetween('function collectRepository', 'function resolveRepository')
@@ -142,7 +181,7 @@ test('analysis scope exposes the shared default, safe range, and fixed character
   assert.match(input, /max=["']32["']/)
   assert.match(input, /step=["']1["']/)
   assert.deepEqual(presetValues, ['8', '16', '24', '32'])
-  assert.match(help, /48,000자/)
+  assert.match(helpTag, /data-i18n=["']analysisSettings\.maxFilesHelp["']/)
   assert.match(collectSource, /maxFiles:\s*analysisPlan\.maxFiles/)
   assert.match(collectSource, /depth:\s*analysisPlan\.depth/)
   assert.match(settingsSource, /chrome\.storage\.local\.get\(ANALYSIS_SETTINGS_STORAGE_KEY\)/)
@@ -158,16 +197,9 @@ test('analysis scope exposes the shared default, safe range, and fixed character
 test('the ready view offers quick analysis and direct deep analysis as distinct paths', () => {
   const source = sourceBetween('function renderReady()', 'async function startAnalysis')
 
-  assert.match(source, /class:\s*['"]analysis-paths['"],\s*['"]aria-label['"]:\s*['"]분석 경로 선택['"]/)
-  assert.match(
-    source,
-    /button\(['"]빠른 분석 시작['"],\s*['"]primary-button['"],\s*\(\) => startAnalysis\(['"]overview['"]\)\)/,
-  )
-  assert.match(
-    source,
-    /button\(['"]바로 심층 분석['"],\s*['"]secondary-button['"],\s*\(\) => startAnalysis\(['"]deep['"]\)\)/,
-  )
-  assert.equal(source.match(/AI 요청 1회/g)?.length, 2)
+  assert.match(source, /class:\s*['"]analysis-paths['"]/)
+  assert.match(source, /button\([\s\S]*?['"]primary-button['"],\s*\(\) => startAnalysis\(['"]overview['"]\)\)/)
+  assert.match(source, /button\([\s\S]*?['"]secondary-button['"],\s*\(\) => startAnalysis\(['"]deep['"]\)\)/)
   assert.doesNotMatch(source, /aria-hidden['"]:\s*['"]true['"][\s\S]*?['"]→['"]/)
 })
 
@@ -176,11 +208,7 @@ test('quick reports can be upgraded and deep reports retain their source lineage
   const reportSource = sourceBetween('function openReport', 'function renderReportSection')
 
   assert.match(reportSource, /if \(record\.analysisPlan\?\.depth === ANALYSIS_DEPTH\.overview\)/)
-  assert.match(
-    reportSource,
-    /button\(upgradeError \? ['"]다시 확장['"] : ['"]심층 분석으로 확장['"],[\s\S]*?startAnalysis\(['"]deep['"],\s*\{ sourceRecord: record \}\)\)/,
-  )
-  assert.match(reportSource, /기존 빠른 결과는 유지 · AI 요청 1회 추가/)
+  assert.match(reportSource, /button\(upgradeError \?[\s\S]*?startAnalysis\(['"]deep['"],\s*\{ sourceRecord: record \}\)\)/)
   assert.match(startSource, /\.\.\.\(sourceRecord \? \{ derivedFromKey: sourceRecord\.key \} : \{\}\)/)
 })
 
@@ -207,10 +235,7 @@ test('a failed upgrade restores its quick source and retries from that same reco
   assert.match(recoveryBranch, /state\.currentRecord = previousRecord/)
   assert.match(recoveryBranch, /openReport\(previousRecord, \{ upgradeError: error \}\)/)
   assert.doesNotMatch(recoveryBranch, /renderContextError/)
-  assert.match(
-    reportSource,
-    /upgradeError \? ['"]다시 확장['"] : ['"]심층 분석으로 확장['"][\s\S]*?startAnalysis\(['"]deep['"],\s*\{ sourceRecord: record \}\)/,
-  )
+  assert.match(reportSource, /upgradeError \?[\s\S]*?startAnalysis\(['"]deep['"],\s*\{ sourceRecord: record \}\)/)
 })
 
 test('upgrading a report always analyzes that report repository, including from history', () => {
@@ -224,11 +249,9 @@ test('upgrading a report always analyzes that report repository, including from 
 
 test('analysis settings summarize quick and deep limits separately', () => {
   const source = sourceBetween('function hydrateAnalysisSettings', 'async function refreshCurrentReportForAnalysisSettings')
-  const initialSummary = sidepanelHtml.match(/id=["']file-limit-summary["'][^>]*>([^<]+)</)?.[1] ?? ''
 
-  assert.match(initialSummary, /빠른 최대 8개 · 심층 최대 16개/)
   assert.match(source, /resolveEffectiveAnalysisFileLimit\(createAnalysisPlan\(/)
-  assert.match(source, /`빠른 최대 \$\{quickLimit\}개 · 심층 최대 \$\{maxFiles\}개`/)
+  assert.match(source, /t\(['"]analysis\.fileLimits['"],\s*\{ quick: quickLimit, deep: maxFiles \}\)/)
 })
 
 test('stale analysis-scope lookups cannot overwrite the latest records', () => {
@@ -267,12 +290,12 @@ test('upgrade reports route to connection settings instead of silently ignoring 
   const source = sourceBetween('function openReport', 'function renderReportSection')
 
   assert.match(source, /actionRow\(analysisConnectionReady\(\)/)
-  assert.match(source, /button\(['"]AI 연결 설정['"], ['"]primary-button['"], openSettings\)/)
+  assert.match(source, /button\([\s\S]*?['"]primary-button['"], openSettings\)/)
 })
 
 test('history upgrade actions also route to connection settings when AI is unavailable', () => {
   const source = sourceBetween('async function openHistory', 'async function openSettings')
 
   assert.match(source, /record\.analysisPlan\?\.depth === ['"]overview['"][\s\S]*?analysisConnectionReady\(\)/)
-  assert.match(source, /button\(['"]AI 연결['"], ['"]text-button['"], openSettings/)
+  assert.match(source, /button\([\s\S]*?['"]text-button['"], openSettings/)
 })

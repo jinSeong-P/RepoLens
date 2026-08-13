@@ -29,6 +29,21 @@ export const ARCHITECTURE_RELATIONS = Object.freeze([
   'depends_on',
 ])
 
+export type ArchitectureNodeKind = 'entry' | 'ui' | 'service' | 'library' | 'data' | 'config' | 'external'
+export type ArchitectureRelation = 'calls' | 'imports' | 'reads' | 'writes' | 'configures' | 'contains' | 'sends' | 'returns' | 'depends_on'
+
+interface Citation {
+  fileId: string
+  path: string
+  start: number
+  end: number
+  label: string
+  url: string
+}
+
+interface RepositorySnapshot { owner: string, repo: string, sha: string }
+interface RepositoryFile { id?: string, path?: string, lineCount?: number }
+
 const NODE_KIND_LABELS = Object.freeze({
   entry: '시작점',
   ui: 'UI',
@@ -62,14 +77,14 @@ const URI_SCHEME_TEXT = /\b(?:https?|javascript|data|vbscript|file)\s*:/giu
  * Invalid items are discarded and all display text is reduced to a small,
  * newline-free character set before it can reach a diagram renderer.
  */
-export function parseArchitectureGraph(value, repository, files) {
+export function parseArchitectureGraph(value: unknown, repository: unknown, files: unknown[]) {
   if (!isPlainObject(value) || !Array.isArray(value.nodes) || value.nodes.length === 0) return null
 
   const nodes = []
   const nodeIds = new Set()
   for (const candidate of value.nodes.slice(0, ARCHITECTURE_GRAPH_LIMITS.maxNodes)) {
     if (!isPlainObject(candidate) || typeof candidate.id !== 'string' || !NODE_ID_PATTERN.test(candidate.id)) continue
-    if (nodeIds.has(candidate.id) || !ARCHITECTURE_NODE_KINDS.includes(candidate.kind)) continue
+    if (nodeIds.has(candidate.id) || !ARCHITECTURE_NODE_KINDS.includes(candidate.kind as ArchitectureNodeKind)) continue
 
     const label = sanitizeDiagramText(candidate.label, ARCHITECTURE_GRAPH_LIMITS.maxNodeLabelChars)
     if (!label) continue
@@ -97,7 +112,7 @@ export function parseArchitectureGraph(value, repository, files) {
   for (const candidate of candidates.slice(0, ARCHITECTURE_GRAPH_LIMITS.maxEdges)) {
     if (!isPlainObject(candidate)) continue
     if (!nodeIds.has(candidate.from) || !nodeIds.has(candidate.to) || candidate.from === candidate.to) continue
-    if (!ARCHITECTURE_RELATIONS.includes(candidate.relation)) continue
+    if (!ARCHITECTURE_RELATIONS.includes(candidate.relation as ArchitectureRelation)) continue
 
     const identity = `${candidate.from}\u0000${candidate.to}\u0000${candidate.relation}`
     if (edgeIdentities.has(identity)) continue
@@ -118,7 +133,7 @@ export function parseArchitectureGraph(value, repository, files) {
 
   return {
     caption: sanitizeDiagramText(value.caption, ARCHITECTURE_GRAPH_LIMITS.maxCaptionChars)
-      || '선택된 파일을 바탕으로 구성한 개념 구조입니다.',
+      || '',
     nodes,
     edges,
   }
@@ -128,8 +143,8 @@ export function parseArchitectureGraph(value, repository, files) {
  * Generates a deliberately tiny Mermaid subset. AI-provided IDs, relation
  * labels, directives, styles, URLs, and Mermaid source are never emitted.
  */
-export function buildMermaidDefinition(graph) {
-  const fallback = buildArchitectureFallbackData(graph)
+export function buildMermaidDefinition(graph: unknown, labels: ArchitectureLabels = {}) {
+  const fallback = buildArchitectureFallbackData(graph, labels)
   if (fallback.nodes.length === 0) return ''
 
   const nodeIndex = new Map(fallback.nodes.map((node, index) => [node.id, `n${index}`]))
@@ -151,13 +166,18 @@ export const buildMermaidSource = buildMermaidDefinition
  * Returns renderer-independent, text-only data for an accessible HTML list.
  * It also defensively normalizes cached graph objects before the UI uses them.
  */
-export function buildArchitectureFallbackData(graph) {
+export interface ArchitectureLabels {
+  nodeKinds?: Partial<Record<ArchitectureNodeKind, string>>
+  relations?: Partial<Record<ArchitectureRelation, string>>
+}
+
+export function buildArchitectureFallbackData(graph: unknown, labels: ArchitectureLabels = {}) {
   const candidates = isPlainObject(graph) && Array.isArray(graph.nodes) ? graph.nodes : []
   const nodes = []
   const nodeIds = new Set()
   for (const candidate of candidates.slice(0, ARCHITECTURE_GRAPH_LIMITS.maxNodes)) {
     if (!isPlainObject(candidate) || typeof candidate.id !== 'string' || !NODE_ID_PATTERN.test(candidate.id)) continue
-    if (nodeIds.has(candidate.id) || !ARCHITECTURE_NODE_KINDS.includes(candidate.kind)) continue
+    if (nodeIds.has(candidate.id) || !ARCHITECTURE_NODE_KINDS.includes(candidate.kind as ArchitectureNodeKind)) continue
     const label = sanitizeDiagramText(candidate.label, ARCHITECTURE_GRAPH_LIMITS.maxNodeLabelChars)
     if (!label) continue
 
@@ -166,7 +186,8 @@ export function buildArchitectureFallbackData(graph) {
       id: candidate.id,
       label,
       kind: candidate.kind,
-      kindLabel: NODE_KIND_LABELS[candidate.kind],
+      kindLabel: labels.nodeKinds?.[candidate.kind as ArchitectureNodeKind]
+        ?? NODE_KIND_LABELS[candidate.kind as ArchitectureNodeKind],
       description: sanitizeDiagramText(candidate.description, ARCHITECTURE_GRAPH_LIMITS.maxNodeDescriptionChars),
       citations: copyStoredCitations(candidate.citations),
     })
@@ -180,7 +201,7 @@ export function buildArchitectureFallbackData(graph) {
     if (!isPlainObject(candidate)) continue
     const from = byId.get(candidate.from)
     const to = byId.get(candidate.to)
-    if (!from || !to || from.id === to.id || !ARCHITECTURE_RELATIONS.includes(candidate.relation)) continue
+    if (!from || !to || from.id === to.id || !ARCHITECTURE_RELATIONS.includes(candidate.relation as ArchitectureRelation)) continue
     const identity = `${from.id}\u0000${to.id}\u0000${candidate.relation}`
     if (identities.has(identity)) continue
     identities.add(identity)
@@ -190,21 +211,22 @@ export function buildArchitectureFallbackData(graph) {
       toId: to.id,
       toLabel: to.label,
       relation: candidate.relation,
-      relationLabel: RELATION_LABELS[candidate.relation],
+      relationLabel: labels.relations?.[candidate.relation as ArchitectureRelation]
+        ?? RELATION_LABELS[candidate.relation as ArchitectureRelation],
       citations: copyStoredCitations(candidate.citations),
     })
   }
 
   return {
-    caption: sanitizeDiagramText(graph?.caption, ARCHITECTURE_GRAPH_LIMITS.maxCaptionChars),
+    caption: sanitizeDiagramText(isPlainObject(graph) ? graph.caption : '', ARCHITECTURE_GRAPH_LIMITS.maxCaptionChars),
     nodes,
     relationships,
   }
 }
 
-export function validateCitations(citations, repository, files) {
+export function validateCitations(citations: unknown, repository: unknown, files: unknown[]): Citation[] {
   if (!Array.isArray(citations) || !Array.isArray(files) || !isRepositorySnapshot(repository)) return []
-  const byId = new Map(files.map((file) => [file?.id, file]))
+  const byId = new Map(files.filter(isPlainObject).map((file) => [file.id, file]))
   const result = []
   const seen = new Set()
 
@@ -232,7 +254,7 @@ export function validateCitations(citations, repository, files) {
   return result
 }
 
-function sanitizeDiagramText(value, maxLength) {
+function sanitizeDiagramText(value: unknown, maxLength: number) {
   if (typeof value !== 'string') return ''
   const normalized = value
     .normalize('NFKC')
@@ -244,7 +266,7 @@ function sanitizeDiagramText(value, maxLength) {
   return Array.from(normalized).slice(0, maxLength).join('').trim()
 }
 
-function copyStoredCitations(citations) {
+function copyStoredCitations(citations: unknown): Citation[] {
   if (!Array.isArray(citations)) return []
   const result = []
   const seen = new Set()
@@ -267,7 +289,8 @@ function copyStoredCitations(citations) {
   return result
 }
 
-function isSafeGitHubCitationUrl(value) {
+function isSafeGitHubCitationUrl(value: unknown) {
+  if (typeof value !== 'string') return false
   try {
     const url = new URL(value)
     return url.origin === 'https://github.com'
@@ -281,7 +304,7 @@ function isSafeGitHubCitationUrl(value) {
   }
 }
 
-function isRepositorySnapshot(repository) {
+function isRepositorySnapshot(repository: unknown): repository is RepositorySnapshot {
   return isPlainObject(repository)
     && isSafeRepositoryPart(repository.owner)
     && isSafeRepositoryPart(repository.repo)
@@ -289,14 +312,14 @@ function isRepositorySnapshot(repository) {
     && COMMIT_SHA_PATTERN.test(repository.sha)
 }
 
-function isSafeRepositoryPart(value) {
+function isSafeRepositoryPart(value: unknown) {
   return typeof value === 'string'
     && /^[A-Za-z0-9_.-]{1,100}$/.test(value)
     && value !== '.'
     && value !== '..'
 }
 
-function isSafePath(path) {
+function isSafePath(path: unknown): path is string {
   return typeof path === 'string'
     && path.length <= 500
     && !path.includes('\\')
@@ -304,7 +327,7 @@ function isSafePath(path) {
     && !path.split('/').some((part) => part === '..' || part === '')
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is Record<string, any> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null

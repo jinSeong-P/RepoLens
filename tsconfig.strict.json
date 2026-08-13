@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/i18n/**/*.ts",
+    "src/lib/provider-url.ts",
+    "src/lib/analysis-settings.ts",
+    "src/lib/analysis-plan.ts",
+    "src/lib/connection.ts",
+    "src/lib/sse.ts",
+    "src/lib/ai-client.ts",
+    "src/lib/github-auth-ui.ts",
+    "src/lib/github-rpc.ts",
+    "src/lib/github-request-state.ts",
+    "src/lib/github.ts",
+    "src/lib/repository-selector.ts"
+  ]
+}

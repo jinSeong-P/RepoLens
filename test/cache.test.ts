@@ -42,7 +42,7 @@ function legacyRecord(overrides = {}) {
 
 const MAPPINGS = [{ providerRef: PROVIDER_REF, ...LEGACY_PROVIDER }]
 
-test('builds a v4 cache key from repository, providerRef, prompt version, and analysis plan', () => {
+test('builds a v5 cache key from repository, providerRef, prompt version, analysis plan, and output locale', () => {
   const key = makeReportKey({
     repository: REPOSITORY,
     providerRef: PROVIDER_REF,
@@ -50,9 +50,8 @@ test('builds a v4 cache key from repository, providerRef, prompt version, and an
     provider: { ...LEGACY_PROVIDER },
   })
 
-  assert.match(key, /^v4\|owner%2Frepo\|/)
-  assert.match(key, /\|depth-deep\|selector-local-two-stage-v1\|files-16$/)
-  assert.match(key, /\|files-16$/)
+  assert.match(key, /^v5\|owner%2Frepo\|/)
+  assert.match(key, /\|depth-deep\|selector-local-two-stage-v1\|files-16\|output-ko$/)
   assert.match(key, new RegExp(PROVIDER_REF))
   assert.doesNotMatch(key, /api\.example\.com|example-model/)
   assert.notEqual(key, makeReportKey({
@@ -72,6 +71,14 @@ test('builds a v4 cache key from repository, providerRef, prompt version, and an
     promptVersion: PROMPT_VERSION,
     analysisPlan: { ...DEEP_PLAN, depth: 'overview' },
   }))
+  const englishKey = makeReportKey({
+    repository: REPOSITORY,
+    providerRef: PROVIDER_REF,
+    promptVersion: PROMPT_VERSION,
+    outputLocale: 'en',
+  })
+  assert.match(englishKey, /\|output-en$/)
+  assert.notEqual(key, englishKey)
   assert.throws(() => makeReportKey({
     repository: REPOSITORY,
     providerRef: PROVIDER_REF,
@@ -193,7 +200,7 @@ test('requires supplied IndexedDB primary keys to correspond to every record', (
   )
 })
 
-test('does not overwrite an existing v4 report when a migrated key collides', () => {
+test('does not overwrite an existing v5 report when a migrated key collides', () => {
   const source = legacyRecord()
   const targetKey = makeReportKey({
     repository: REPOSITORY,

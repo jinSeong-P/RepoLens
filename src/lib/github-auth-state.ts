@@ -1,13 +1,47 @@
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const REJECTED_MARKER_VERSION = 1
 
+type UnknownRecord = Record<string, unknown>
+
+export interface GitHubFlowAttemptState extends UnknownRecord {
+  flowId: string
+  activeAttemptId?: string
+  attemptStartedAt?: number
+}
+
+export interface GitHubFlowAttemptIdentity {
+  flowId: string
+  attemptId: string
+}
+
+export interface GitHubAuthRejectedMarker {
+  version: typeof REJECTED_MARKER_VERSION
+  vaultId: string
+  keyVersion: string
+  revision: string
+  createdAt: string
+}
+
+export interface GitHubAuthInvalidationOutcome {
+  localMarkerStored: boolean
+  durableCredentialDeleted: boolean
+}
+
+export interface GitHubAuthInvalidationPlan {
+  removeLiveSession: true
+  keepMemoryDenied: true
+  restartSafe: boolean
+}
+
 // A normal GitHub auth request is bounded to 30 seconds. Giving an abandoned
 // attempt another 30 seconds lets an MV3 worker recover without allowing a
 // crashed attempt to block the Device Flow until its code expires.
 export const GITHUB_FLOW_ATTEMPT_STALE_MS = 60_000
 
 export class GitHubAuthStateError extends Error {
-  constructor(code, message) {
+  readonly code: string
+
+  constructor(code: string, message: string) {
     super(message)
     this.name = 'GitHubAuthStateError'
     this.code = code
@@ -21,11 +55,16 @@ export class GitHubAuthStateError extends Error {
  * write inside their serialized state boundary. A returned object is a clone;
  * the supplied flow is never mutated.
  */
-export function claimGitHubFlowAttempt(flow, flowId, attemptId, now) {
+export function claimGitHubFlowAttempt(
+  flow: unknown,
+  flowId: unknown,
+  attemptId: unknown,
+  now: unknown,
+): GitHubFlowAttemptState {
   if (!isPlainObject(flow) || !isUuid(flowId) || flow.flowId !== flowId || !isUuid(attemptId)) {
     throw stateError('flow_mismatch', 'GitHub 연결 요청이 없거나 일치하지 않습니다.')
   }
-  if (!Number.isSafeInteger(now) || now < 0) {
+  if (typeof now !== 'number' || !Number.isSafeInteger(now) || now < 0) {
     throw stateError('invalid_time', 'GitHub 연결 시각이 올바르지 않습니다.')
   }
 
@@ -38,7 +77,8 @@ export function claimGitHubFlowAttempt(flow, flowId, attemptId, now) {
   }
 
   if (hasActiveId) {
-    if (!isUuid(activeAttemptId) || !Number.isSafeInteger(attemptStartedAt) || attemptStartedAt < 0) {
+    if (!isUuid(activeAttemptId) || typeof attemptStartedAt !== 'number'
+      || !Number.isSafeInteger(attemptStartedAt) || attemptStartedAt < 0) {
       throw stateError('invalid_flow', 'GitHub 연결 요청 상태가 올바르지 않습니다.')
     }
     // Reusing an attempt ID would let the abandoned request commit after a
@@ -49,31 +89,32 @@ export function claimGitHubFlowAttempt(flow, flowId, attemptId, now) {
   }
 
   return {
-    ...structuredClone(flow),
+    ...structuredClone(flow as UnknownRecord),
+    flowId,
     activeAttemptId: attemptId,
     attemptStartedAt: now,
   }
 }
 
 /** Returns true only while a result still owns the exact stored attempt. */
-export function matchGitHubFlowAttempt(value, expected) {
-  return Boolean(isPlainObject(value)
-    && isPlainObject(expected)
-    && isUuid(expected.flowId)
-    && isUuid(expected.attemptId)
-    && value.flowId === expected.flowId
+export function matchGitHubFlowAttempt(value: unknown, expected: unknown): boolean {
+  if (!isPlainObject(value) || !isPlainObject(expected)
+    || !isUuid(expected.flowId) || !isUuid(expected.attemptId)) return false
+  const attemptStartedAt = value.attemptStartedAt
+  return value.flowId === expected.flowId
     && value.activeAttemptId === expected.attemptId
-    && Number.isSafeInteger(value.attemptStartedAt)
-    && value.attemptStartedAt >= 0)
+    && typeof attemptStartedAt === 'number'
+    && Number.isSafeInteger(attemptStartedAt)
+    && attemptStartedAt >= 0
 }
 
 /** A 401 may invalidate only the credential revision that made the request. */
-export function canInvalidateGitHubSession(errorRevision, sessionRevision) {
+export function canInvalidateGitHubSession(errorRevision: unknown, sessionRevision: unknown): boolean {
   return isUuid(errorRevision) && isUuid(sessionRevision) && errorRevision === sessionRevision
 }
 
 /** Creates a token-free tombstone for one rejected durable credential. */
-export function makeGitHubAuthRejectedMarker(session) {
+export function makeGitHubAuthRejectedMarker(session: unknown): GitHubAuthRejectedMarker {
   if (!isPlainObject(session) || !isUuid(session.vaultId) || !isUuid(session.keyVersion)
     || !isUuid(session.revision) || !isPlainObject(session.auth)
     || !isCanonicalTimestamp(session.auth.createdAt)) {
@@ -94,7 +135,7 @@ export function makeGitHubAuthRejectedMarker(session) {
  * create conditionally after a 401; `createdAt` is the durable identity that
  * remains stable when the vault is locked and unlocked.
  */
-export function shouldRejectGitHubAuth(marker, envelope, auth) {
+export function shouldRejectGitHubAuth(marker: unknown, envelope: unknown, auth: unknown): boolean {
   if (!isPlainObject(marker) || !hasExactKeys(marker, [
     'createdAt', 'keyVersion', 'revision', 'vaultId', 'version',
   ])) return false
@@ -120,10 +161,16 @@ export function shouldRejectGitHubAuth(marker, envelope, auth) {
  * stores. Every candidate is checked independently so a stale local value can
  * never mask a matching legacy session value.
  */
-export function findGitHubAuthRejectedMarker(markers, envelope, auth) {
+export function findGitHubAuthRejectedMarker(
+  markers: unknown,
+  envelope: unknown,
+  auth: unknown,
+): GitHubAuthRejectedMarker | null {
   if (!Array.isArray(markers)) return null
   for (const marker of markers) {
-    if (shouldRejectGitHubAuth(marker, envelope, auth)) return structuredClone(marker)
+    if (shouldRejectGitHubAuth(marker, envelope, auth)) {
+      return structuredClone(marker) as GitHubAuthRejectedMarker
+    }
   }
   return null
 }
@@ -134,7 +181,7 @@ export function findGitHubAuthRejectedMarker(markers, envelope, auth) {
  * restart safety additionally needs either a local tombstone or durable vault
  * deletion to succeed.
  */
-export function planGitHubAuthInvalidation(outcome) {
+export function planGitHubAuthInvalidation(outcome: unknown): GitHubAuthInvalidationPlan {
   if (!isPlainObject(outcome)
     || typeof outcome.localMarkerStored !== 'boolean'
     || typeof outcome.durableCredentialDeleted !== 'boolean') {
@@ -147,27 +194,27 @@ export function planGitHubAuthInvalidation(outcome) {
   }
 }
 
-function stateError(code, message) {
+function stateError(code: string, message: string): GitHubAuthStateError {
   return new GitHubAuthStateError(code, message)
 }
 
-function isUuid(value) {
+function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value)
 }
 
-function isCanonicalTimestamp(value) {
+function isCanonicalTimestamp(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 50) return false
   const timestamp = Date.parse(value)
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
 }
 
-function hasExactKeys(value, expected) {
+function hasExactKeys(value: UnknownRecord, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort()
   const keys = [...expected].sort()
   return actual.length === keys.length && actual.every((key, index) => key === keys[index])
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is UnknownRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null

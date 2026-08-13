@@ -18,8 +18,61 @@ const FINE_GRAINED_PAT_PATTERN = /^github_pat_[A-Za-z0-9_]{20,244}$/
 const LEGACY_PAT_PATTERN = /^[A-Fa-f0-9]{40}$/
 const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/
 
+type UnknownRecord = Record<string, unknown>
+type GitHubAuthMethod = 'oauth' | 'pat'
+type GitHubTokenType = 'bearer' | 'token'
+type FetchResponseLike = Pick<Response, 'ok' | 'status' | 'url' | 'headers' | 'text'>
+type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<FetchResponseLike>
+
+export interface GitHubDeviceAuthorization {
+  deviceCode: string
+  expiresIn: number
+  interval: number
+}
+
+export interface GitHubDeviceCode extends GitHubDeviceAuthorization {
+  userCode: string
+  verificationUri: string
+}
+
+export interface GitHubAuthRecord {
+  method: GitHubAuthMethod
+  token: string
+  tokenType: GitHubTokenType
+  login: string
+  createdAt: string
+}
+
+export type GitHubAuthPublicState = {
+  connected: true
+  method: GitHubAuthMethod
+  login: string
+  createdAt: string
+} | {
+  connected: false
+  method: null
+  login: null
+  createdAt: null
+}
+
+interface RequestOptions {
+  fetchImpl?: FetchImplementation
+  signal?: AbortSignal
+}
+
+interface PollOptions extends RequestOptions {
+  now?: () => number
+  sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>
+}
+
+interface ErrorOptions { status?: number }
+
 export class GitHubAuthError extends Error {
-  constructor(code, message, options = {}) {
+  readonly source = 'github'
+  readonly code: string
+  readonly status: number | undefined
+
+  constructor(code: string, message: string, options: ErrorOptions = {}) {
     super(message)
     this.name = 'GitHubAuthError'
     this.source = 'github'
@@ -33,7 +86,7 @@ export class GitHubAuthError extends Error {
  * accepted alphabet deliberately narrow so a configured value can safely be
  * placed in an application/x-www-form-urlencoded request.
  */
-export function normalizeGitHubOAuthClientId(value) {
+export function normalizeGitHubOAuthClientId(value: unknown): string {
   const clientId = typeof value === 'string' ? value.trim() : ''
   if (clientId.length < 10 || clientId.length > MAX_CLIENT_ID_LENGTH || !CLIENT_ID_PATTERN.test(clientId)) {
     throw new GitHubAuthError('invalid_client', 'GitHub OAuth 클라이언트 설정이 올바르지 않습니다.')
@@ -42,7 +95,7 @@ export function normalizeGitHubOAuthClientId(value) {
 }
 
 /** Accepts current classic/fine-grained PATs and the legacy 40-hex format. */
-export function normalizeGitHubPat(value) {
+export function normalizeGitHubPat(value: unknown): string {
   const token = typeof value === 'string' ? value.trim() : ''
   if (token.length > MAX_PAT_LENGTH
     || hasUnsafeSecretCharacters(token)
@@ -58,7 +111,7 @@ export function normalizeGitHubPat(value) {
  * Starts a least-privilege GitHub Device Flow. No scope field is sent, so the
  * resulting OAuth token must have an empty scope set.
  */
-export async function requestGitHubDeviceCode(clientId, options = {}) {
+export async function requestGitHubDeviceCode(clientId: unknown, options: RequestOptions = {}): Promise<GitHubDeviceCode> {
   const normalizedClientId = normalizeGitHubOAuthClientId(clientId)
   const fetchImpl = requireFetch(options.fetchImpl)
   throwIfAborted(options.signal)
@@ -92,7 +145,11 @@ export async function requestGitHubDeviceCode(clientId, options = {}) {
  * `slow_down` permanently adds five seconds, and no request begins at or after
  * the local expiry deadline.
  */
-export async function pollGitHubAccessToken(clientId, deviceAuthorization, options = {}) {
+export async function pollGitHubAccessToken(
+  clientId: unknown,
+  deviceAuthorization: unknown,
+  options: PollOptions = {},
+): Promise<{ token: string, tokenType: 'bearer' }> {
   const normalizedClientId = normalizeGitHubOAuthClientId(clientId)
   const device = normalizeDeviceAuthorization(deviceAuthorization)
   const fetchImpl = requireFetch(options.fetchImpl)
@@ -110,7 +167,8 @@ export async function pollGitHubAccessToken(clientId, deviceAuthorization, optio
     try {
       await sleep(Math.min(intervalMs, remaining), options.signal)
     } catch (error) {
-      if (options.signal?.aborted || error?.name === 'AbortError' || error?.code === 'cancelled') {
+      if (options.signal?.aborted || errorField(error, 'name') === 'AbortError'
+        || errorField(error, 'code') === 'cancelled') {
         throw cancelledError()
       }
       throw error
@@ -132,7 +190,15 @@ export async function pollGitHubAccessToken(clientId, deviceAuthorization, optio
 }
 
 /** Performs exactly one token exchange so an MV3 side panel can drive polling. */
-export async function exchangeGitHubDeviceToken(clientId, deviceAuthorization, options = {}) {
+export async function exchangeGitHubDeviceToken(
+  clientId: unknown,
+  deviceAuthorization: unknown,
+  options: RequestOptions = {},
+): Promise<
+  | { status: 'pending' }
+  | { status: 'slow_down' }
+  | { status: 'connected', token: string, tokenType: 'bearer' }
+> {
   const normalizedClientId = normalizeGitHubOAuthClientId(clientId)
   const device = normalizeDeviceAuthorization(deviceAuthorization)
   const fetchImpl = requireFetch(options.fetchImpl)
@@ -179,7 +245,10 @@ export async function exchangeGitHubDeviceToken(clientId, deviceAuthorization, o
  * Confirms credentials against a fixed GitHub API origin and returns only the
  * public account login. The Authorization value is never copied into errors.
  */
-export async function verifyGitHubToken(credentials, options = {}) {
+export async function verifyGitHubToken(
+  credentials: unknown,
+  options: RequestOptions = {},
+): Promise<{ login: string }> {
   const normalized = normalizeVerificationCredentials(credentials)
   const fetchImpl = requireFetch(options.fetchImpl)
   throwIfAborted(options.signal)
@@ -210,7 +279,7 @@ export async function verifyGitHubToken(credentials, options = {}) {
 }
 
 /** Strict validator for the encrypted/stored GitHub authorization record. */
-export function validateGitHubAuthRecord(value) {
+export function validateGitHubAuthRecord(value: unknown): GitHubAuthRecord {
   if (!isPlainObject(value) || !hasOnlyKeys(value, ['method', 'token', 'tokenType', 'login', 'createdAt'])) {
     throw new GitHubAuthError('invalid_auth_record', '저장된 GitHub 인증 정보 형식이 올바르지 않습니다.')
   }
@@ -240,7 +309,7 @@ export function validateGitHubAuthRecord(value) {
 }
 
 /** Returns a fail-closed, token-free state suitable for UI and RPC payloads. */
-export function sanitizeGitHubAuthState(value) {
+export function sanitizeGitHubAuthState(value: unknown): GitHubAuthPublicState {
   try {
     const record = validateGitHubAuthRecord(value)
     return {
@@ -254,7 +323,7 @@ export function sanitizeGitHubAuthState(value) {
   }
 }
 
-function normalizeVerificationCredentials(value) {
+function normalizeVerificationCredentials(value: unknown): { token: string, tokenType: GitHubTokenType } {
   if (!isPlainObject(value)) throw new GitHubAuthError('invalid_token', 'GitHub 인증 정보 형식이 올바르지 않습니다.')
   const tokenType = value.tokenType
   if (tokenType !== 'bearer' && tokenType !== 'token') {
@@ -272,7 +341,7 @@ function normalizeVerificationCredentials(value) {
   return { token, tokenType }
 }
 
-function normalizeDeviceAuthorization(value) {
+function normalizeDeviceAuthorization(value: unknown): GitHubDeviceAuthorization {
   if (!isPlainObject(value)) throw invalidDeviceResponse()
   return {
     deviceCode: requireSecret(value.deviceCode, MAX_DEVICE_CODE_LENGTH, 'invalid_device_response'),
@@ -281,14 +350,15 @@ function normalizeDeviceAuthorization(value) {
   }
 }
 
-function normalizeUserCode(value) {
+function normalizeUserCode(value: unknown): string {
   if (typeof value !== 'string' || value.length < 4 || value.length > 32 || !/^[A-Za-z0-9-]+$/.test(value)) {
     throw invalidDeviceResponse()
   }
   return value
 }
 
-function normalizeVerificationUri(value) {
+function normalizeVerificationUri(value: unknown): string {
+  if (typeof value !== 'string') throw invalidDeviceResponse()
   let url
   try {
     url = new URL(value)
@@ -302,12 +372,12 @@ function normalizeVerificationUri(value) {
   return url.href
 }
 
-function normalizeLogin(value) {
+function normalizeLogin(value: unknown): string {
   if (typeof value !== 'string' || value.length > 39 || !LOGIN_PATTERN.test(value)) throw invalidAuthRecord()
   return value
 }
 
-function normalizeCreatedAt(value) {
+function normalizeCreatedAt(value: unknown): string {
   if (typeof value !== 'string' || value.length > 50) throw invalidAuthRecord()
   const timestamp = Date.parse(value)
   if (!Number.isFinite(timestamp)) throw invalidAuthRecord()
@@ -316,35 +386,40 @@ function normalizeCreatedAt(value) {
   return canonical
 }
 
-function requireSecret(value, maxLength, code) {
+function requireSecret(value: unknown, maxLength: number, code: string): string {
   if (typeof value !== 'string' || value.length < 1 || value.length > maxLength || hasUnsafeSecretCharacters(value)) {
     throw new GitHubAuthError(code, 'GitHub 인증 응답 형식이 올바르지 않습니다.')
   }
   return value
 }
 
-function hasUnsafeSecretCharacters(value) {
+function hasUnsafeSecretCharacters(value: unknown): boolean {
   return typeof value !== 'string' || /[\s\u0000-\u001f\u007f]/.test(value)
 }
 
-function assertEmptyScope(value) {
+function assertEmptyScope(value: unknown): void {
   if (value === undefined || value === null) return
   if (typeof value === 'string' && value.trim() === '') return
   throw new GitHubAuthError('unexpected_scope', 'RepoLens는 권한 범위가 없는 GitHub 연결만 허용합니다.')
 }
 
-async function fetchAuthEndpoint(fetchImpl, url, init, signal) {
+async function fetchAuthEndpoint(
+  fetchImpl: FetchImplementation,
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<FetchResponseLike> {
   try {
     const response = await fetchImpl(url, init)
     throwIfAborted(signal)
     return response
   } catch (error) {
-    if (signal?.aborted || error?.name === 'AbortError') throw cancelledError()
+    if (signal?.aborted || errorField(error, 'name') === 'AbortError') throw cancelledError()
     throw new GitHubAuthError('network', 'GitHub 인증 서버에 연결하지 못했습니다.')
   }
 }
 
-function assertEndpointResponse(response, expectedUrl) {
+function assertEndpointResponse(response: FetchResponseLike, expectedUrl: string): void {
   if (!response || typeof response.ok !== 'boolean' || !Number.isInteger(response.status)) {
     throw new GitHubAuthError('invalid_response', 'GitHub 인증 서버 응답 형식이 올바르지 않습니다.')
   }
@@ -362,12 +437,12 @@ function assertEndpointResponse(response, expectedUrl) {
   }
 }
 
-async function readBoundedJson(response, signal) {
+async function readBoundedJson(response: FetchResponseLike, signal?: AbortSignal): Promise<UnknownRecord> {
   let text
   try {
     text = await response.text()
   } catch (error) {
-    if (signal?.aborted || error?.name === 'AbortError') throw cancelledError()
+    if (signal?.aborted || errorField(error, 'name') === 'AbortError') throw cancelledError()
     throw new GitHubAuthError('parse', 'GitHub 인증 서버 응답을 읽지 못했습니다.')
   }
   throwIfAborted(signal)
@@ -383,37 +458,37 @@ async function readBoundedJson(response, signal) {
   }
 }
 
-function formHeaders() {
+function formHeaders(): Record<string, string> {
   return {
     Accept: 'application/json',
     'Content-Type': 'application/x-www-form-urlencoded',
   }
 }
 
-function requireFetch(value) {
+function requireFetch(value: unknown): FetchImplementation {
   const fetchImpl = value ?? globalThis.fetch
   if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.')
-  return (...args) => fetchImpl(...args)
+  return (...args: Parameters<FetchImplementation>) => fetchImpl(...args)
 }
 
-function requireBoundedInteger(value, minimum, maximum, code) {
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+function requireBoundedInteger(value: unknown, minimum: number, maximum: number, code: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
     throw new GitHubAuthError(code, 'GitHub 인증 응답 형식이 올바르지 않습니다.')
   }
   return value
 }
 
-function requireFiniteTime(value) {
-  if (!Number.isFinite(value)) throw new TypeError('The clock must return a finite timestamp.')
+function requireFiniteTime(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError('The clock must return a finite timestamp.')
   return value
 }
 
-function throwIfAborted(signal) {
+function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw cancelledError()
 }
 
-function abortableSleep(milliseconds, signal) {
-  return new Promise((resolve, reject) => {
+function abortableSleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
       reject(cancelledError())
       return
@@ -434,36 +509,40 @@ function abortableSleep(milliseconds, signal) {
   })
 }
 
-function hasOnlyKeys(value, expected) {
+function hasOnlyKeys(value: UnknownRecord, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort()
   const keys = [...expected].sort()
   return actual.length === keys.length && actual.every((key, index) => key === keys[index])
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is UnknownRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
 }
 
-function invalidDeviceResponse() {
+function invalidDeviceResponse(): GitHubAuthError {
   return new GitHubAuthError('invalid_device_response', 'GitHub 인증 응답 형식이 올바르지 않습니다.')
 }
 
-function invalidAuthRecord() {
+function invalidAuthRecord(): GitHubAuthError {
   return new GitHubAuthError('invalid_auth_record', '저장된 GitHub 인증 정보 형식이 올바르지 않습니다.')
 }
 
-function cancelledError() {
+function cancelledError(): GitHubAuthError {
   return new GitHubAuthError('cancelled', 'GitHub 연결을 중지했습니다.')
 }
 
-function expiredError() {
+function expiredError(): GitHubAuthError {
   return new GitHubAuthError('expired', 'GitHub 연결 코드가 만료되었습니다. 다시 시도해 주세요.')
 }
 
-function httpError(status) {
+function httpError(status: unknown): GitHubAuthError {
   return new GitHubAuthError('github', 'GitHub 인증 서버가 요청을 처리하지 못했습니다.', {
-    status: Number.isInteger(status) ? status : undefined,
+    status: typeof status === 'number' && Number.isInteger(status) ? status : undefined,
   })
+}
+
+function errorField(error: unknown, key: 'name' | 'code'): unknown {
+  return isPlainObject(error) ? error[key] : undefined
 }

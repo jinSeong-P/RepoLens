@@ -66,17 +66,49 @@ import {
   isConnectionRecord,
   providerIdentity,
 } from './lib/connection.js'
+import type { ConnectionRecord } from './lib/connection.js'
 
 const GITHUB_AUTH_SESSION_KEY = 'githubAuthSession'
 const GITHUB_AUTH_REJECTED_KEY = 'githubAuthRejected'
 const GITHUB_FLOW_SESSION_KEY = 'githubAuthFlow'
 const GITHUB_DEVICE_VERIFICATION_URL = 'https://github.com/login/device'
+
+/** Untrusted messages/storage records are validated by the existing guards. */
+type WireRecord = Record<string, any>
+type WireValue = any
+
+interface ActiveJob {
+  port: chrome.runtime.Port
+  requestId: string
+}
+
+interface ActiveRepositoryRequest {
+  requestId: string
+  requestKey: string
+  controller: AbortController
+}
+
+interface GitHubFlowController {
+  attemptId: string
+  controller: AbortController
+}
+
+interface PublicExtensionError extends Error {
+  code: string
+}
+
+interface GitHubAuthExpectations {
+  expectedVaultId?: string
+  expectedRevision?: string
+  expectedMutationRevision?: string
+}
+
 const github = new GitHubClient(fetch, { authProvider: getGitHubCredentialSnapshot })
-let activeJob = null
-let vaultOperation = Promise.resolve()
+let activeJob: ActiveJob | null = null
+let vaultOperation: Promise<unknown> = Promise.resolve()
 let vaultResetInProgress = false
 let githubAuthMutationRevision = crypto.randomUUID()
-const githubAuthControllers = new Map()
+const githubAuthControllers = new Map<string, GitHubFlowController>()
 const githubRepositoryRequests = new GitHubRequestRegistry()
 const deniedGitHubAuth = new GitHubAuthDenyList()
 
@@ -130,7 +162,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true
 })
 
-async function handleMessage(message, sender) {
+async function handleMessage(message: WireRecord, sender: chrome.runtime.MessageSender): Promise<WireRecord> {
   const vaultRequest = typeof message?.type === 'string' && message.type.startsWith('VAULT_')
   const githubAuthRequest = typeof message?.type === 'string' && message.type.startsWith('GITHUB_AUTH_')
   const sensitiveRequest = vaultRequest || githubAuthRequest || ['GET_STATE', 'SAVE_PROVIDER', 'CLEAR_API_KEY'].includes(message?.type)
@@ -188,15 +220,15 @@ async function assertGitHubPermission() {
   }
 }
 
-function isSidePanelSender(sender) {
+function isSidePanelSender(sender: chrome.runtime.MessageSender | undefined): boolean {
   return isTrustedSidePanelSender(sender, chrome.runtime.id, chrome.runtime.getURL('sidepanel.html'))
 }
 
-function attachGitHubPort(port) {
-  let request = null
+function attachGitHubPort(port: chrome.runtime.Port): void {
+  let request: ActiveRepositoryRequest | null = null
   const portId = crypto.randomUUID()
 
-  port.onMessage.addListener((message) => {
+  port.onMessage.addListener((message: WireRecord) => {
     if (message?.type === 'CANCEL') {
       if (request?.requestId === message.requestId) request.controller.abort()
       return
@@ -221,7 +253,7 @@ function attachGitHubPort(port) {
     ;(async () => {
       await assertGitHubPermission()
       let authRevision
-      const captureAuthRevision = (revision) => {
+      const captureAuthRevision = (revision: string | undefined) => {
         if (!isUuid(revision)) return
         authRevision = revision
         githubRepositoryRequests.captureAuthRevision(requestKey, revision)
@@ -273,7 +305,7 @@ function attachGitHubPort(port) {
   })
 }
 
-async function handlePortMessage(port, message) {
+async function handlePortMessage(port: chrome.runtime.Port, message: WireRecord): Promise<void> {
   if (message?.type === 'KEEPALIVE') {
     if (activeJob?.port === port && activeJob.requestId === message.requestId) {
       postSafe(port, { type: 'keepalive', requestId: message.requestId })
@@ -410,7 +442,7 @@ async function getState() {
   }
 }
 
-async function saveProvider(payload) {
+async function saveProvider(payload: WireRecord): Promise<WireRecord> {
   const { [PROVIDER_VAULT_STORAGE_KEY]: vault } = await chrome.storage.local.get(PROVIDER_VAULT_STORAGE_KEY)
   if (vault !== undefined) {
     throw publicError('vault_required', '암호화 볼트에서는 AI 프리셋으로 연결을 저장해 주세요.')
@@ -423,7 +455,7 @@ async function saveProvider(payload) {
 
   const connection = {
     provider,
-    apiKey: apiKey || existing.apiKey,
+    apiKey: apiKey || (isConnectionRecord(existing) ? existing.apiKey : ''),
     revision: crypto.randomUUID(),
   }
   await chrome.storage.local.set({ [LEGACY_PROVIDER_CONFIG_KEY]: provider })
@@ -431,7 +463,7 @@ async function saveProvider(payload) {
   return getState()
 }
 
-async function createVault(payload) {
+async function createVault(payload: WireRecord): Promise<WireRecord> {
   const password = requirePassword(payload?.password)
   const historicalProviders = payload?.historicalProviders ?? []
   const local = await chrome.storage.local.get([
@@ -470,7 +502,7 @@ async function createVault(payload) {
   return getState()
 }
 
-async function unlockVault(payload) {
+async function unlockVault(payload: WireRecord): Promise<WireRecord> {
   const password = requirePassword(payload?.password)
   githubRepositoryRequests.abortAll()
   abortGitHubFlowControllers()
@@ -522,7 +554,7 @@ async function lockVault() {
   return getState()
 }
 
-async function saveVaultPreset(payload) {
+async function saveVaultPreset(payload: WireRecord): Promise<WireRecord> {
   if (activeJob) throw publicError('busy', 'AI 작업 중에는 프리셋을 변경할 수 없습니다.')
   const { envelope, vaultSession, contents } = await requireUnlockedVault()
   const presetId = payload?.id ?? payload?.presetId ?? null
@@ -540,6 +572,7 @@ async function saveVaultPreset(payload) {
       draft.historicalProviders = mergeHistoricalProviders([...draft.historicalProviders, provider])
       historical = findHistoricalProvider(draft.historicalProviders, provider)
     }
+    if (!historical) throw publicError('conflict', 'AI 연결 정보를 저장하지 못했습니다.')
     const nextPreset = {
       id: existing?.id ?? crypto.randomUUID(),
       providerRef: historical.providerRef,
@@ -566,7 +599,7 @@ async function saveVaultPreset(payload) {
   return getState()
 }
 
-async function activateVaultPreset(payload) {
+async function activateVaultPreset(payload: WireRecord): Promise<WireRecord> {
   if (activeJob) throw publicError('busy', 'AI 작업 중에는 프리셋을 변경할 수 없습니다.')
   const presetId = requirePresetId(payload)
   const { envelope, vaultSession, contents } = await requireUnlockedVault()
@@ -580,7 +613,7 @@ async function activateVaultPreset(payload) {
   return getState()
 }
 
-async function deleteVaultPreset(payload) {
+async function deleteVaultPreset(payload: WireRecord): Promise<WireRecord> {
   if (activeJob) throw publicError('busy', 'AI 작업 중에는 프리셋을 변경할 수 없습니다.')
   const presetId = requirePresetId(payload)
   const { envelope, vaultSession, contents } = await requireUnlockedVault()
@@ -642,7 +675,7 @@ async function startGitHubAuth() {
   return { flow: sanitizeGitHubFlow(flow) }
 }
 
-async function pollGitHubAuth(payload) {
+async function pollGitHubAuth(payload: WireRecord): Promise<WireRecord> {
   const clientId = configuredGitHubClientId()
   if (!clientId) throw publicError('oauth_unconfigured', 'GitHub OAuth Client ID가 설정되지 않았습니다.')
   if (!isUuid(payload?.flowId)) throw publicError('request', 'GitHub 연결 요청이 일치하지 않습니다.')
@@ -668,7 +701,7 @@ async function pollGitHubAuth(payload) {
     try {
       claimed = claimGitHubFlowAttempt(current, flowId, attemptId, now)
     } catch (error) {
-      if (error?.code !== 'flow_busy') throw error
+      if (errorCode(error) !== 'flow_busy') throw error
       return {
         pending: true,
         retryAfterMs: Math.max(750, Math.min(
@@ -734,7 +767,7 @@ async function pollGitHubAuth(payload) {
   }
 }
 
-async function cancelGitHubAuth(payload) {
+async function cancelGitHubAuth(payload: WireRecord): Promise<WireRecord> {
   if (!isUuid(payload?.flowId)) throw publicError('request', 'GitHub 연결 요청이 일치하지 않습니다.')
   abortGitHubFlowControllers(payload.flowId)
   return serializeVaultOperation(async () => {
@@ -746,7 +779,7 @@ async function cancelGitHubAuth(payload) {
   })
 }
 
-async function saveGitHubPat(payload) {
+async function saveGitHubPat(payload: WireRecord): Promise<WireRecord> {
   if (activeJob) throw publicError('busy', 'AI 작업 중에는 GitHub 연결을 변경할 수 없습니다.')
   const token = normalizeGitHubPat(payload?.token)
   abortGitHubFlowControllers()
@@ -803,11 +836,15 @@ async function disconnectGitHubAuth() {
 
 async function cancelAnyGitHubFlow() {
   const { [GITHUB_FLOW_SESSION_KEY]: flow } = await chrome.storage.session.get(GITHUB_FLOW_SESSION_KEY)
-  if (flow?.flowId) abortGitHubFlowControllers(flow.flowId)
+  if (isRecord(flow) && typeof flow.flowId === 'string') abortGitHubFlowControllers(flow.flowId)
   await chrome.storage.session.remove(GITHUB_FLOW_SESSION_KEY)
 }
 
-async function withTimeout(operation, milliseconds, existingController = new AbortController()) {
+async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  milliseconds: number,
+  existingController = new AbortController(),
+): Promise<T> {
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true
@@ -825,7 +862,7 @@ async function withTimeout(operation, milliseconds, existingController = new Abo
   }
 }
 
-async function storeGitHubAuth(auth, expectations = {}) {
+async function storeGitHubAuth(auth: WireValue, expectations: GitHubAuthExpectations = {}): Promise<void> {
   return serializeVaultOperation(async () => {
     if (vaultResetInProgress) throw publicError('busy', '암호화 저장소를 초기화하는 중입니다.')
     const { envelope, vaultSession, contents } = await requireUnlockedVault()
@@ -850,7 +887,13 @@ async function storeGitHubAuth(auth, expectations = {}) {
   })
 }
 
-async function commitGitHubFlowAuth(auth, flowId, attemptId, expectedVaultId, expectedRevision) {
+async function commitGitHubFlowAuth(
+  auth: WireValue,
+  flowId: string,
+  attemptId: string,
+  expectedVaultId: string,
+  expectedRevision: string,
+): Promise<void> {
   return serializeVaultOperation(async () => {
     const stored = (await chrome.storage.session.get(GITHUB_FLOW_SESSION_KEY))[GITHUB_FLOW_SESSION_KEY]
     if (!matchGitHubFlowAttempt(stored, { flowId, attemptId })) {
@@ -876,7 +919,7 @@ async function commitGitHubFlowAuth(auth, flowId, attemptId, expectedVaultId, ex
   })
 }
 
-async function commitPendingGitHubFlow(flowId, attemptId, status) {
+async function commitPendingGitHubFlow(flowId: string, attemptId: string, status: string) {
   return serializeVaultOperation(async () => {
     const stored = (await chrome.storage.session.get(GITHUB_FLOW_SESSION_KEY))[GITHUB_FLOW_SESSION_KEY]
     if (!matchGitHubFlowAttempt(stored, { flowId, attemptId })) {
@@ -886,7 +929,7 @@ async function commitPendingGitHubFlow(flowId, attemptId, status) {
     const intervalMs = status === 'slow_down'
       ? Math.min(60_000, flow.intervalMs + 5_000)
       : flow.intervalMs
-    const pending = {
+    const pending: WireRecord = {
       ...flow,
       intervalMs,
       nextPollAt: Date.now() + intervalMs,
@@ -898,7 +941,7 @@ async function commitPendingGitHubFlow(flowId, attemptId, status) {
   })
 }
 
-async function requireCurrentGitHubFlowAttempt(flowId, attemptId) {
+async function requireCurrentGitHubFlowAttempt(flowId: string, attemptId: string) {
   return serializeVaultOperation(async () => {
     const stored = (await chrome.storage.session.get(GITHUB_FLOW_SESSION_KEY))[GITHUB_FLOW_SESSION_KEY]
     if (!matchGitHubFlowAttempt(stored, { flowId, attemptId })) {
@@ -908,7 +951,7 @@ async function requireCurrentGitHubFlowAttempt(flowId, attemptId) {
   })
 }
 
-async function settleFailedGitHubFlowAttempt(flowId, attemptId, error) {
+async function settleFailedGitHubFlowAttempt(flowId: string, attemptId: string, error: unknown) {
   return serializeVaultOperation(async () => {
     const stored = (await chrome.storage.session.get(GITHUB_FLOW_SESSION_KEY))[GITHUB_FLOW_SESSION_KEY]
     if (!matchGitHubFlowAttempt(stored, { flowId, attemptId })) return
@@ -916,19 +959,19 @@ async function settleFailedGitHubFlowAttempt(flowId, attemptId, error) {
       'access_denied', 'expired', 'invalid_device_response', 'invalid_token',
       'invalid_token_response', 'oauth_error', 'unexpected_scope',
     ])
-    if (terminal.has(error?.code)) {
+    if (terminal.has(errorCode(error) ?? '')) {
       await chrome.storage.session.remove(GITHUB_FLOW_SESSION_KEY)
       return
     }
     const flow = requireGitHubFlow(stored, flowId)
-    const retryable = { ...flow, nextPollAt: Date.now() + flow.intervalMs }
+    const retryable: WireRecord = { ...flow, nextPollAt: Date.now() + flow.intervalMs }
     delete retryable.activeAttemptId
     delete retryable.attemptStartedAt
     await chrome.storage.session.set({ [GITHUB_FLOW_SESSION_KEY]: retryable })
   })
 }
 
-function abortGitHubFlowControllers(flowId) {
+function abortGitHubFlowControllers(flowId?: string): void {
   for (const [candidateFlowId, active] of githubAuthControllers) {
     if (flowId === undefined || candidateFlowId === flowId) active.controller.abort()
   }
@@ -989,7 +1032,7 @@ async function resetVault() {
   }
 }
 
-async function persistVaultUpdate(updated) {
+async function persistVaultUpdate(updated: WireRecord): Promise<void> {
   await chrome.storage.local.set({ [PROVIDER_VAULT_STORAGE_KEY]: updated.envelope })
   await chrome.storage.session.set({
     [PROVIDER_VAULT_SESSION_KEY]: makeVaultSession(updated.envelope, updated.keyMaterial),
@@ -1024,12 +1067,12 @@ async function requireUnlockedVault() {
   }
 }
 
-function validEnvelopeOrNull(value) {
+function validEnvelopeOrNull(value: unknown): WireValue | null {
   if (value === undefined) return null
   try { return validateProviderVaultEnvelope(value) } catch { return null }
 }
 
-function connectionFromPreset(preset) {
+function connectionFromPreset(preset: WireRecord): ConnectionRecord {
   return {
     provider: normalizeProviderConfig(preset),
     apiKey: preset.apiKey,
@@ -1037,7 +1080,7 @@ function connectionFromPreset(preset) {
   }
 }
 
-function connectionMatchesPreset(connection, preset) {
+function connectionMatchesPreset(connection: unknown, preset: WireRecord): boolean {
   if (!isConnectionRecord(connection)) return false
   try {
     return connection.apiKey === preset.apiKey
@@ -1057,7 +1100,7 @@ async function getGitHubCredentialSnapshot() {
     chrome.storage.local.get(GITHUB_AUTH_REJECTED_KEY),
   ])
   const authSession = session[GITHUB_AUTH_SESSION_KEY]
-  if (!authSession || typeof authSession !== 'object') return null
+  if (!isRecord(authSession)) return null
   try {
     const auth = validateGitHubAuthRecord(authSession.auth)
     if (typeof authSession.revision !== 'string' || !isUuid(authSession.vaultId)
@@ -1098,15 +1141,16 @@ async function getGitHubCredentialSnapshot() {
   }
 }
 
-async function requireCurrentGitHubAuthRevision(expectedRevision) {
+async function requireCurrentGitHubAuthRevision(expectedRevision?: string): Promise<void> {
   if (!expectedRevision) return
   const session = (await chrome.storage.session.get(GITHUB_AUTH_SESSION_KEY))[GITHUB_AUTH_SESSION_KEY]
-  if (!canInvalidateGitHubSession(expectedRevision, session?.revision)) {
+  const revision = isRecord(session) ? session.revision : undefined
+  if (!canInvalidateGitHubSession(expectedRevision, revision)) {
     throw publicError('github_auth_changed', 'GitHub 연결이 요청 중 변경되었습니다. 다시 시도해 주세요.')
   }
 }
 
-function githubSessionFromRecord(auth, envelope) {
+function githubSessionFromRecord(auth: WireValue, envelope: WireRecord): WireRecord {
   return {
     auth: validateGitHubAuthRecord(auth),
     vaultId: envelope.vaultId,
@@ -1115,8 +1159,8 @@ function githubSessionFromRecord(auth, envelope) {
   }
 }
 
-function validGitHubSession(value, envelope) {
-  if (!value || !envelope || typeof value !== 'object' || Array.isArray(value)) return null
+function validGitHubSession(value: unknown, envelope: WireRecord | null): WireRecord | null {
+  if (!isRecord(value) || !envelope) return null
   if (!isUuid(value.revision) || value.vaultId !== envelope.vaultId || value.keyVersion !== envelope.keyVersion) return null
   try {
     return { ...value, auth: validateGitHubAuthRecord(value.auth) }
@@ -1136,7 +1180,7 @@ async function readGitHubAuthRejectedMarkers() {
   }
 }
 
-async function reconcileGitHubAuthRejectedMarkers(options) {
+async function reconcileGitHubAuthRejectedMarkers(options: WireRecord): Promise<WireValue | null> {
   const durableMatch = findGitHubAuthRejectedMarker(
     [options.localMarker, options.legacyMarker],
     options.envelope,
@@ -1176,7 +1220,7 @@ async function clearGitHubAuthRejectedMarker() {
   ])
 }
 
-function configuredGitHubClientId() {
+function configuredGitHubClientId(): string | null {
   try {
     return normalizeGitHubOAuthClientId(GITHUB_OAUTH_CLIENT_ID)
   } catch {
@@ -1184,8 +1228,8 @@ function configuredGitHubClientId() {
   }
 }
 
-function sanitizeGitHubFlow(value) {
-  if (!value || typeof value !== 'object' || !isUuid(value.flowId)
+function sanitizeGitHubFlow(value: unknown): WireRecord | null {
+  if (!isRecord(value) || !isUuid(value.flowId)
     || typeof value.userCode !== 'string' || !/^[A-Za-z0-9-]{4,32}$/.test(value.userCode)
     || value.verificationUri !== GITHUB_DEVICE_VERIFICATION_URL
     || !Number.isFinite(Date.parse(value.expiresAt))) return null
@@ -1198,8 +1242,8 @@ function sanitizeGitHubFlow(value) {
   }
 }
 
-function requireGitHubFlow(value, flowId) {
-  if (!value || typeof value !== 'object' || !isUuid(flowId) || value.flowId !== flowId
+function requireGitHubFlow(value: unknown, flowId: unknown): WireRecord {
+  if (!isRecord(value) || !isUuid(flowId) || value.flowId !== flowId
     || typeof value.deviceCode !== 'string' || value.deviceCode.length > 512
     || /[\s\u0000-\u001f\u007f]/.test(value.deviceCode)
     || !sanitizeGitHubFlow(value)
@@ -1210,17 +1254,20 @@ function requireGitHubFlow(value, flowId) {
   return value
 }
 
-async function invalidateExpiredGitHubSession(error) {
-  if (error?.code !== 'github_auth_expired') return
-  if (!isUuid(error.authRevision)) return
+async function invalidateExpiredGitHubSession(error: unknown): Promise<void> {
+  if (errorCode(error) !== 'github_auth_expired') return
+  const authRevision = recordValue(error, 'authRevision')
+  if (!isUuid(authRevision)) return
   // Deny in worker memory before any asynchronous storage operation. Even if
   // both the tombstone and encrypted deletion fail, no later request in this
   // worker can reuse the rejected revision.
-  deniedGitHubAuth.denyRevision(error.authRevision)
+  deniedGitHubAuth.denyRevision(authRevision)
   githubRepositoryRequests.abortAll()
   return serializeVaultOperation(async () => {
     const session = (await chrome.storage.session.get(GITHUB_AUTH_SESSION_KEY))[GITHUB_AUTH_SESSION_KEY]
-    if (!canInvalidateGitHubSession(error.authRevision, session?.revision)) return
+    const sessionRevision = isRecord(session) ? session.revision : undefined
+    if (!canInvalidateGitHubSession(authRevision, sessionRevision)) return
+    if (!isRecord(session)) return
     deniedGitHubAuth.denySession(session)
     let marker
     try { marker = makeGitHubAuthRejectedMarker(session) } catch { return }
@@ -1239,8 +1286,10 @@ async function invalidateExpiredGitHubSession(error) {
     }
     try {
       const { envelope, vaultSession, contents } = await requireUnlockedVault()
-      if (contents.githubAuth?.createdAt === session.auth.createdAt
-        && contents.githubAuth.token === session.auth.token) {
+      const sessionAuth = isRecord(session.auth) ? session.auth : null
+      if (contents.githubAuth && sessionAuth
+        && contents.githubAuth.createdAt === sessionAuth.createdAt
+        && contents.githubAuth.token === sessionAuth.token) {
         const updated = await updateProviderVaultWithKeyMaterial(envelope, vaultSession.keyMaterial, (draft) => {
           draft.githubAuth = null
         }, { expectedRevision: contents.revision })
@@ -1250,18 +1299,18 @@ async function invalidateExpiredGitHubSession(error) {
   })
 }
 
-function requirePassword(value) {
+function requirePassword(value: unknown): string {
   if (typeof value !== 'string') throw publicError('password_policy', '마스터 비밀번호를 입력해 주세요.')
   return value
 }
 
-function requirePresetId(payload) {
+function requirePresetId(payload: WireRecord): string {
   const value = payload?.presetId ?? payload?.id
   if (!isUuid(value)) throw publicError('request', '프리셋 ID가 올바르지 않습니다.')
   return value
 }
 
-function normalizePresetName(value) {
+function normalizePresetName(value: unknown): string {
   if (typeof value !== 'string' || value.trim() !== value || value.length < 1 || value.length > 100
     || /[\u0000-\u001f\u007f]/.test(value)) {
     throw publicError('request', '프리셋 이름 형식이 올바르지 않습니다.')
@@ -1269,7 +1318,7 @@ function normalizePresetName(value) {
   return value
 }
 
-function serializeVaultOperation(operation) {
+function serializeVaultOperation<T>(operation: () => T | PromiseLike<T>): Promise<T> {
   const result = vaultOperation.then(operation, operation)
   vaultOperation = result.catch(() => {})
   return result
@@ -1284,16 +1333,29 @@ function lockSessionStorage() {
   chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {})
 }
 
-function postSafe(port, message) {
+function postSafe(port: chrome.runtime.Port, message: WireRecord): void {
   try { port.postMessage(message) } catch { /* Panel already closed. */ }
 }
 
-function publicError(code, message) {
-  const error = new Error(message)
+function publicError(code: string, message: string): PublicExtensionError {
+  const error = new Error(message) as PublicExtensionError
   error.code = code
   return error
 }
 
-function serializeError(error) {
+function serializeError(error: unknown): WireRecord {
   return serializeExtensionError(error)
+}
+
+function isRecord(value: unknown): value is WireRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function recordValue(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined
+}
+
+function errorCode(error: unknown): string | undefined {
+  const code = recordValue(error, 'code')
+  return typeof code === 'string' ? code : undefined
 }

@@ -428,6 +428,14 @@ form > label:not(.check-row) { display: block; margin: 14px 0 5px; font-weight: 
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
+
+.language-settings-card select {
+  margin-bottom: 12px;
+}
+
+.language-settings-card .form-status:empty {
+  display: none;
+}
 .settings-card-heading,
 .vault-unlocked-heading {
   display: flex;

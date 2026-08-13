@@ -18,27 +18,30 @@ Follow [SECURITY.md](SECURITY.md) for sensitive reports.
 
 ## Development setup
 
-RepoLens is a build-free Chrome Manifest V3 extension. No package installation
-is required for normal development.
+RepoLens is a TypeScript Chrome Manifest V3 extension. Node.js 22 or newer is
+required for its local build and checks.
 
 1. Clone or fork the repository.
-2. Open `chrome://extensions` in Chrome.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select the repository root.
-5. After editing extension files, reload RepoLens on the extensions page and
+2. Install the pinned development dependencies with `npm ci`.
+3. Compile the extension with `npm run build`.
+4. Open `chrome://extensions` in Chrome and enable **Developer mode**.
+5. Choose **Load unpacked** and select `build/extension`.
+6. After editing extension files, rebuild, reload RepoLens, and
    reopen the side panel.
 
-Node.js 22 or newer is required for the test suite:
+The primary development commands are:
 
 ```powershell
+npm run build
 npm test
 npm run check
 ```
 
-`npm run check` validates the manifest security contract and runs all Node test
-files. Run it before submitting a pull request. Test behavior in Chrome when a
-change affects the service worker, permissions, OAuth flow, storage, streaming,
-Mermaid rendering, or side-panel interaction.
+`npm run check` performs strict type checking, runs the Node tests, builds the
+extension, and validates the generated manifest surface. Run it before
+submitting a pull request. Test behavior in Chrome when a change affects the
+service worker, permissions, OAuth flow, storage, streaming, Mermaid rendering,
+or side-panel interaction.
 
 ## Project principles
 
@@ -71,8 +74,8 @@ relevant trust boundary.
 - Keep modules cohesive and keep privileged GitHub and credential operations in
   their existing trusted contexts.
 - Prefer browser and platform APIs over adding runtime dependencies.
-- Preserve the build-free extension unless a proposal demonstrates a clear user
-  and maintenance benefit.
+- Keep the TypeScript build small, deterministic, locally reproducible, and free
+  of runtime CDN dependencies.
 - Treat network responses, repository contents, AI output, cached records, and
   extension messages as untrusted input. Validate bounded schemas and fail
   closed at security boundaries.

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {
   PROMPT_VERSION,
   REPORT_SCHEMA_VERSION,
+  analysisSectionTitle,
   buildAnalysisMessages,
+  buildQuestionMessages,
   parseAnalysisOutput,
   validateCitations,
 } from '../src/lib/analysis.js'
@@ -29,11 +31,31 @@ test('marks overview prompts as a limited anchor-only first pass', () => {
     files,
     selection: { depth: 'overview' },
   })
-  assert.equal(PROMPT_VERSION, 'repo-analysis-v3')
+  assert.equal(PROMPT_VERSION, 'repo-analysis-v4-localized')
   assert.match(messages[0].content, /overview is a limited first pass/i)
   assert.match(messages[1].content, /"depth":"overview"/)
   assert.match(messages[1].content, /"selectionStrategy":"anchor-files-only"/)
   assert.match(messages[1].content, /never imply repository-wide coverage/i)
+})
+
+test('applies the requested AI output locale to report and question prompts', () => {
+  const koreanReport = buildAnalysisMessages(repository, { files }, { outputLocale: 'ko' })
+  const englishReport = buildAnalysisMessages(repository, { files }, { outputLocale: 'en' })
+  const koreanQuestion = buildQuestionMessages(repository, { files }, { summary: 'summary' }, 'question', {
+    outputLocale: 'ko',
+  })
+  const englishQuestion = buildQuestionMessages(repository, { files }, { summary: 'summary' }, 'question', {
+    outputLocale: 'en',
+  })
+
+  for (const messages of [koreanReport, koreanQuestion]) {
+    assert.match(messages[0].content, /\bin Korean\b/)
+  }
+  for (const messages of [englishReport, englishQuestion]) {
+    assert.match(messages[0].content, /\bin English\b/)
+  }
+  assert.match(koreanReport[1].content, /Write concise Korean/)
+  assert.match(englishReport[1].content, /Write concise English/)
 })
 
 test('marks deep prompts as representative local-reference expansion, not a complete audit', () => {
@@ -84,11 +106,19 @@ test('parses fenced JSON and fills all required sections', () => {
   assert.equal(report.summary, '요약')
   assert.equal(report.schemaVersion, REPORT_SCHEMA_VERSION)
   assert.equal(report.promptVersion, PROMPT_VERSION)
+  assert.equal(report.sections.problem.key, 'problem')
+  assert.equal(report.sections.architecture.key, 'architecture')
   assert.equal(report.sections.problem.kind, 'fact')
   assert.equal(report.sections.architecture.kind, 'inference')
   assert.equal(report.sections.problem.citations.length, 1)
   assert.equal(report.architectureGraph.nodes.length, 2)
   assert.equal(report.architectureGraph.edges[0].relation, 'contains')
+})
+
+test('localizes stable report section keys independently from AI-authored text', () => {
+  assert.equal(analysisSectionTitle('problem', 'ko'), '해결하는 문제')
+  assert.equal(analysisSectionTitle('problem', 'en'), 'Problem it solves')
+  assert.equal(analysisSectionTitle('gettingStarted', 'en'), 'Getting started')
 })
 
 test('keeps the text report usable when architecture graph data is malformed', () => {

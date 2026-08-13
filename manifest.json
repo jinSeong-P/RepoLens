@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "RepoLens",
-  "description": "Browse GitHub normally, then ask your own AI provider to explain a public repository.",
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "ko",
   "version": "0.1.0",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -27,7 +28,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "RepoLens 열기",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "assets/icon-16.png",
       "32": "assets/icon-32.png"

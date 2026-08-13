@@ -5,9 +5,18 @@
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
-    "test": "node --test",
-    "check": "node scripts/check-manifest.mjs && node --test",
-    "package:extension": "node scripts/package-extension.mjs"
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.strict.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "build": "node scripts/build-extension.mjs",
+    "check": "npm run typecheck && npm test && npm run build && node scripts/check-manifest.mjs build/extension",
+    "package:extension": "npm run build && node scripts/package-extension.mjs build/extension"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.5",
+    "@types/node": "22.20.0",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
   },
   "engines": {
     "node": ">=22"

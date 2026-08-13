@@ -35,7 +35,7 @@ security audit or proof of runtime behavior.
 
 Current preview capabilities include:
 
-- a build-free Chrome Manifest V3 side panel;
+- a TypeScript-authored Chrome Manifest V3 side panel with a small, local build;
 - public repositories and their default branch;
 - quick and deep analysis paths with one AI request per run;
 - encrypted AI connection presets and optional GitHub OAuth or PAT credentials;
@@ -60,9 +60,16 @@ notes explicitly say to do so.
 
 ### Source checkout
 
-There is no build step or package installation for the extension itself.
-Clone or download this repository, then use **Load unpacked** and select the
-repository root—the folder containing `manifest.json`.
+Clone or download this repository, then build the unpacked extension:
+
+```powershell
+npm ci
+npm run build
+```
+
+Use **Load unpacked** and select `build/extension`—the generated folder that
+directly contains `manifest.json`. Do not select the repository root; Chrome
+cannot execute the TypeScript source files directly.
 
 ### First run
 
@@ -293,16 +300,20 @@ tree, dependency audit, or proof of runtime behavior.
 
 ## Development
 
-Node.js 22 or newer is required only for checks and tests:
+Node.js 22 or newer is required to install the pinned development dependencies,
+compile the TypeScript sources, and run checks:
 
 ```powershell
-npm test
+npm ci
+npm run build
 npm run check
 ```
 
-No `npm install` or build command is required to load the extension. Keep
-changes compatible with the packaged-script Content Security Policy and do not
-introduce runtime CDN dependencies.
+Load `build/extension` in Chrome after a successful build. The generated
+JavaScript is not committed and release ZIPs contain only executable build
+output and required static assets—not TypeScript sources, tests, source maps,
+or `node_modules`. Keep changes compatible with the extension Content Security
+Policy and do not introduce runtime CDN dependencies.
 
 ## Community and contributing
 

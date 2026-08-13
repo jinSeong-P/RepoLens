@@ -3,8 +3,11 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outputDirectory = join(rootDirectory, 'dist')
+const projectDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const rootDirectory = process.argv[2]
+  ? resolve(process.cwd(), process.argv[2])
+  : join(projectDirectory, 'build', 'extension')
+const outputDirectory = join(projectDirectory, 'dist')
 
 // Keep the release surface explicit. Tests, design sources, local browser
 // profiles, and development output must never enter the extension archive.
@@ -23,6 +26,8 @@ const releaseFiles = [
   'THIRD_PARTY_NOTICES.md',
   'manifest.json',
   'sidepanel.html',
+  '_locales/en/messages.json',
+  '_locales/ko/messages.json',
   'src/background.js',
   'src/github-oauth-config.js',
   'src/lib/ai-client.js',
@@ -44,13 +49,15 @@ const releaseFiles = [
   'src/lib/provider-vault.js',
   'src/lib/repository-selector.js',
   'src/lib/sse.js',
+  'src/i18n/catalog.js',
+  'src/i18n/types.js',
   'src/sidepanel.css',
   'src/sidepanel.js',
   'src/vendor/MERMAID_LICENSE.txt',
   'src/vendor/mermaid-11.16.1.min.js',
 ].sort()
 
-const packageMetadata = JSON.parse(await readFile(join(rootDirectory, 'package.json'), 'utf8'))
+const packageMetadata = JSON.parse(await readFile(join(projectDirectory, 'package.json'), 'utf8'))
 const manifest = JSON.parse(await readFile(join(rootDirectory, 'manifest.json'), 'utf8'))
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index

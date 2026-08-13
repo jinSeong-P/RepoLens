@@ -5,6 +5,7 @@
 .playwright/
 .playwright-cli/
 dist/
+build/
 output/
 node_modules/
 npm-debug.log*
