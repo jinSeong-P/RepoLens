@@ -18,30 +18,34 @@ Follow [SECURITY.md](SECURITY.md) for sensitive reports.
 
 ## Development setup
 
-RepoLens is a TypeScript Chrome Manifest V3 extension. Node.js 22 or newer is
-required for its local build and checks.
+RepoLens is a TypeScript Manifest V3 extension for Chrome and Firefox. Node.js
+22 or newer is required for its local build and checks.
 
 1. Clone or fork the repository.
 2. Install the pinned development dependencies with `npm ci`.
-3. Compile the extension with `npm run build`.
+3. Compile Chrome with `npm run build:chrome` or Firefox with
+   `npm run build:firefox`.
 4. Open `chrome://extensions` in Chrome and enable **Developer mode**.
 5. Choose **Load unpacked** and select `build/extension`.
-6. After editing extension files, rebuild, reload RepoLens, and
+6. For Firefox, open `about:debugging#/runtime/this-firefox`, choose
+   **Load Temporary Add-on**, and select `build/firefox-extension/manifest.json`.
+7. After editing extension files, rebuild, reload RepoLens, and
    reopen the side panel.
 
 The primary development commands are:
 
 ```powershell
-npm run build
+npm run build:chrome
+npm run build:firefox
 npm test
 npm run check
 ```
 
 `npm run check` performs strict type checking, runs the Node tests, builds the
-extension, and validates the generated manifest surface. Run it before
-submitting a pull request. Test behavior in Chrome when a change affects the
-service worker, permissions, OAuth flow, storage, streaming, Mermaid rendering,
-or side-panel interaction.
+two extension targets, and validates both generated manifest surfaces. Run it
+before submitting a pull request. Test the affected browser when a change
+touches background contexts, permissions, OAuth, storage, streaming, Mermaid,
+or side-panel/sidebar interaction.
 
 ## Project principles
 

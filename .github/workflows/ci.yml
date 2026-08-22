@@ -31,9 +31,10 @@ jobs:
 
       - name: Package extension archive
         run: |
-          node scripts/package-extension.mjs build/extension
+          node scripts/package-extension.mjs build/extension chrome
+          node scripts/package-extension.mjs build/firefox-extension firefox
           cd dist
-          sha256sum repolens-extension-*.zip > SHA256SUMS
+          sha256sum repolens-*.zip > SHA256SUMS
 
       - name: Upload extension archive
         uses: actions/upload-artifact@v4
@@ -41,6 +42,7 @@ jobs:
           name: repolens-extension-${{ github.sha }}
           path: |
             dist/repolens-extension-*.zip
+            dist/repolens-firefox-*.zip
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14

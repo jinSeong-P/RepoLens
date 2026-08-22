@@ -1,6 +1,6 @@
 # Security policy
 
-RepoLens is a local Chrome Manifest V3 extension that reads public GitHub
+RepoLens is a local Chrome and Firefox Manifest V3 extension that reads public GitHub
 repositories and sends a bounded selection of public source text to an AI
 provider chosen by the user. It does not execute repository code and it does
 not operate a hosted relay.
@@ -28,7 +28,7 @@ GitHub owner and repository name.
 
 Include, when available:
 
-- the affected RepoLens version and Chrome version;
+- the affected RepoLens version, browser, and browser version;
 - a concise description of the impact and affected trust boundary;
 - reproducible steps or a minimal proof of concept using non-secret test data;
 - whether the issue exposed an AI credential, GitHub credential, source excerpt,

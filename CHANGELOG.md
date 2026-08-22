@@ -15,12 +15,16 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
   unpacked extension to `build/extension`.
 - Korean and English UI catalogs, Chrome manifest locales, and independent AI
   output-language selection.
+- Firefox 140+ Manifest V3 sidebar build, native Promise-based WebExtension API
+  adapter, Firefox manifest validation, and a separate AMO-ready ZIP target.
 
 ### Changed
 
 - Source checkouts now require `npm ci` and `npm run build`; Chrome loads the
   generated `build/extension` directory. Release ZIPs continue to contain only
   executable JavaScript and required runtime/static files.
+- Chrome and Firefox now share the TypeScript runtime while keeping separate
+  browser manifests and generated output directories.
 
 ## [0.1.0] - 2026-08-13
 

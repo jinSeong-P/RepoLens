@@ -5,7 +5,16 @@ import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outputDirectory = join(rootDirectory, 'build', 'extension')
+const target = process.argv[2] ?? 'chrome'
+if (!['chrome', 'firefox'].includes(target)) {
+  throw new Error(`Unsupported extension build target: ${target}`)
+}
+const outputDirectory = join(
+  rootDirectory,
+  'build',
+  target === 'firefox' ? 'firefox-extension' : 'extension',
+)
+const manifestSource = target === 'firefox' ? 'manifest.firefox.json' : 'manifest.json'
 
 await rm(outputDirectory, { recursive: true, force: true })
 await mkdir(join(outputDirectory, 'src'), { recursive: true })
@@ -14,10 +23,11 @@ await run(process.execPath, [
   join(rootDirectory, 'node_modules', 'typescript', 'bin', 'tsc'),
   '-p',
   join(rootDirectory, 'tsconfig.build.json'),
+  '--outDir',
+  join(outputDirectory, 'src'),
 ])
 
 const staticFiles = [
-  'manifest.json',
   'sidepanel.html',
   'src/sidepanel.css',
   'src/vendor/MERMAID_LICENSE.txt',
@@ -36,13 +46,15 @@ const staticFiles = [
   'THIRD_PARTY_NOTICES.md',
 ]
 
+await cp(join(rootDirectory, manifestSource), join(outputDirectory, 'manifest.json'))
+
 for (const relativePath of staticFiles) {
   const destination = join(outputDirectory, ...relativePath.split('/'))
   await mkdir(dirname(destination), { recursive: true })
   await cp(join(rootDirectory, ...relativePath.split('/')), destination)
 }
 
-// Chrome reads manifest strings from _locales, while the UI consumes the
+// Both browser manifests read strings from _locales, while the UI consumes the
 // compiled catalog module. Generate both from the same typed catalog source.
 const localeGeneratorPath = join(outputDirectory, 'src/i18n/chrome-locales.js')
 const localeModule = await import(`${pathToFileURL(localeGeneratorPath).href}?${Date.now()}`)
@@ -61,7 +73,7 @@ for (const [locale, messages] of Object.entries(locales).sort(([left], [right]) 
   await writeFile(join(localeDirectory, 'messages.json'), `${JSON.stringify(messages, null, 2)}\n`, 'utf8')
 }
 
-console.log(`Built ${outputDirectory}`)
+console.log(`Built ${target} extension at ${outputDirectory}`)
 
 function run(command, arguments_) {
   return new Promise((resolvePromise, rejectPromise) => {

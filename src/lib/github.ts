@@ -814,8 +814,8 @@ export function validateRepositoryIdentity(value: unknown): { owner: string; rep
 
 function networkErrorMessage(error: unknown): string {
   if (nestedValue(error, 'code') === 'permission') return 'RepoLens에 api.github.com 사이트 액세스 권한이 없습니다. 확장 프로그램을 다시 로드해 주세요.'
-  if (nestedValue(error, 'code') === 'blocked') return 'Chrome 또는 다른 확장 프로그램이 api.github.com 요청을 차단했습니다.'
-  return 'GitHub API에 연결할 수 없습니다. Chrome의 RepoLens 사이트 액세스와 차단 확장 설정을 확인해 주세요.'
+  if (nestedValue(error, 'code') === 'blocked') return '브라우저 또는 다른 확장 프로그램이 api.github.com 요청을 차단했습니다.'
+  return 'GitHub API에 연결할 수 없습니다. 브라우저의 RepoLens 사이트 액세스와 차단 확장 설정을 확인해 주세요.'
 }
 
 function normalizeNetworkReason(error: unknown): string {

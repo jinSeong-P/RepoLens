@@ -7,6 +7,10 @@ const projectDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootDirectory = process.argv[2]
   ? resolve(process.cwd(), process.argv[2])
   : join(projectDirectory, 'build', 'extension')
+const target = process.argv[3] ?? 'chrome'
+if (!['chrome', 'firefox'].includes(target)) {
+  throw new Error(`Unsupported extension package target: ${target}`)
+}
 const outputDirectory = join(projectDirectory, 'dist')
 
 // Keep the release surface explicit. Tests, design sources, local browser
@@ -49,6 +53,7 @@ const releaseFiles = [
   'src/lib/provider-vault.js',
   'src/lib/repository-selector.js',
   'src/lib/sse.js',
+  'src/lib/webext.js',
   'src/i18n/catalog.js',
   'src/i18n/types.js',
   'src/sidepanel.css',
@@ -91,7 +96,9 @@ for (const archivePath of releaseFiles) {
 }
 
 const archive = createZip(entries)
-const archiveName = `repolens-extension-${manifest.version}.zip`
+const archiveName = target === 'firefox'
+  ? `repolens-firefox-${manifest.version}.zip`
+  : `repolens-extension-${manifest.version}.zip`
 const outputPath = join(outputDirectory, archiveName)
 const temporaryPath = `${outputPath}.tmp-${process.pid}`
 

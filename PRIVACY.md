@@ -1,11 +1,11 @@
 # Privacy policy
 
-RepoLens is a local, build-free Chrome extension for explaining public GitHub
+RepoLens is a locally built Chrome and Firefox extension for explaining public GitHub
 repositories with an AI provider selected by the user. RepoLens has no project-
 operated backend, advertising, analytics, or telemetry in the current MVP.
 
 This document describes the application's data flows. The policies of GitHub,
-Chrome, and the selected AI provider also apply independently.
+the browser, and the selected AI provider also apply independently.
 
 ## Data RepoLens accesses
 
@@ -50,9 +50,15 @@ Authorization header and applies its own retention, training, billing, logging,
 and privacy policies. RepoLens does not proxy these requests through a project-
 operated server.
 
+The Firefox manifest declares required transmission of `authenticationInfo`
+(the user-supplied provider or GitHub credential) and `websiteContent` (the
+public repository excerpts selected for analysis). RepoLens transmits them only
+for the connection or analysis action the user initiates; it does not operate a
+telemetry or analytics service.
+
 ## Local storage and encryption
 
-RepoLens stores data in the current Chrome profile.
+RepoLens stores data in the current browser profile.
 
 The encrypted preset vault contains AI preset names, endpoint URLs, model IDs,
 API keys, streaming settings, GitHub OAuth or PAT credentials, and provider
@@ -62,15 +68,16 @@ for each write. The master password is not stored or transmitted by RepoLens and
 cannot be recovered.
 
 While unlocked, derived key material and the active connection are held in
-memory and `chrome.storage.session`, restricted to trusted extension contexts.
-Locking the vault clears those session records; Chrome also clears them when the
-extension session ends. The MVP does not provide time-based automatic locking.
+memory and WebExtension `storage.session`, restricted to trusted extension
+contexts where the browser API supports that restriction. Locking the vault
+clears those session records; the browser also clears them when the extension
+session ends. The MVP does not provide time-based automatic locking.
 
 The following local data is **not encrypted by the preset vault**:
 
 - public vault envelope metadata such as salt, IV, KDF parameters, vault IDs,
   ciphertext length, and version fields;
-- Chrome's record of provider-origin permissions granted by the user;
+- the browser's record of provider-origin permissions granted by the user;
 - public repository snapshots, selected and decoded source excerpts, analysis
   reports, diagrams, citations, questions, answers, and timestamps in IndexedDB;
   and
@@ -83,7 +90,7 @@ are not stored in the public GitHub cache.
 
 ## Retention and deletion
 
-Analysis records remain in the Chrome profile until the user deletes an item,
+Analysis records remain in the browser profile until the user deletes an item,
 clears all history, resets the preset vault, clears the extension's site data,
 or removes the extension. Cached public GitHub responses expire or are evicted
 under bounded cache policies. Session-only credentials and authenticated cache
@@ -96,7 +103,7 @@ Users can:
 - delete all reports and questions from **Connection and analysis settings**;
 - disconnect GitHub and remove the stored GitHub credential;
 - lock or reset the encrypted preset vault; and
-- remove the extension or clear its storage through Chrome.
+- remove the extension or clear its storage through the browser.
 
 Resetting the vault removes the encrypted presets, stored AI and GitHub
 credentials, and analysis history because opaque provider references can no
@@ -104,7 +111,7 @@ longer be associated with a replacement vault. Revoking a GitHub OAuth grant or
 provider key at the service itself may require using that service's account
 settings separately.
 
-## Chrome permissions
+## Browser permissions
 
 RepoLens requests `activeTab`, `sidePanel`, and `storage`, plus access to
 `github.com` and `api.github.com`. Access to an external HTTPS AI-provider origin

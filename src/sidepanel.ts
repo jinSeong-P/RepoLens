@@ -45,6 +45,7 @@ import {
   normalizeUiPreferences,
   type UiPreferences,
 } from './i18n/types.js'
+import { webext } from './lib/webext.js'
 
 function requiredQuery(selector: string): any {
   const element = document.querySelector(selector)
@@ -162,15 +163,15 @@ analysisSettingsForm.addEventListener('change', handleAnalysisScopeChange)
 analysisSettingsForm.elements.maxFiles.addEventListener('input', syncAnalysisScopePreset)
 languageSettingsForm?.addEventListener('change', saveLanguageSettings)
 
-chrome.tabs.onActivated.addListener(() => {
+webext.tabs.onActivated.addListener(() => {
   if (!state.githubFlow) refreshContext({ preserveView: state.view !== 'context' })
 })
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+webext.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (tab.active && changeInfo.url && !state.githubFlow) {
     refreshContext({ preserveView: state.view !== 'context' })
   }
 })
-chrome.storage.onChanged.addListener((changes, areaName) => {
+webext.storage.onChanged.addListener((changes, areaName) => {
   if (!['local', 'session'].includes(areaName)) return
   if (areaName === 'local' && changes[ANALYSIS_SETTINGS_STORAGE_KEY]) {
     state.analysisSettings = normalizeAnalysisSettings(changes[ANALYSIS_SETTINGS_STORAGE_KEY].newValue)
@@ -504,7 +505,7 @@ async function cancelGitHubFlow() {
 async function openGitHubDevicePage() {
   const url = state.githubFlow?.verificationUri
   if (url !== 'https://github.com/login/device') return
-  await chrome.tabs.create({ url })
+  await webext.tabs.create({ url })
 }
 
 async function copyGitHubCode() {
@@ -1092,7 +1093,7 @@ function resolveRepository(repository, signal) {
 
 function githubPortRequest(type, payload, signal, onProgress, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const port = chrome.runtime.connect({ name: 'repolens-github' })
+    const port = webext.runtime.connect({ name: 'repolens-github' })
     const requestId = crypto.randomUUID()
     let settled = false
     const timeout = setTimeout(() => finishReject(Object.assign(
@@ -1143,7 +1144,7 @@ function abortCurrentJob() {
 
 function streamChat(messages, providerSnapshot, connectionRevisionSnapshot, onDelta) {
   return new Promise((resolve, reject) => {
-    const port = chrome.runtime.connect({ name: 'repolens-panel' })
+    const port = webext.runtime.connect({ name: 'repolens-panel' })
     const requestId = crypto.randomUUID()
     let settled = false
     let startedRequest = false
@@ -1168,7 +1169,7 @@ function streamChat(messages, providerSnapshot, connectionRevisionSnapshot, onDe
       if (message.type === 'authorized' && !startedRequest) {
         startedRequest = true
         try {
-          const { [CONNECTION_STORAGE_KEY]: connection } = await chrome.storage.session.get(CONNECTION_STORAGE_KEY) as any
+          const { [CONNECTION_STORAGE_KEY]: connection } = await webext.storage.session.get(CONNECTION_STORAGE_KEY) as any
           if (settled || controller.signal.aborted) return
           if (!connectionMatchesSnapshot(connection, providerSnapshot, connectionRevisionSnapshot)) {
             throw Object.assign(new Error(t('ai.error.providerChanged')), { code: 'provider_changed' })
@@ -1459,7 +1460,7 @@ function ensureMermaidRenderer() {
 
   mermaidLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script')
-    script.src = chrome.runtime.getURL('src/vendor/mermaid-11.16.1.min.js')
+    script.src = webext.runtime.getURL('src/vendor/mermaid-11.16.1.min.js')
     script.onload = () => globalThis.mermaid?.render
       ? resolve()
       : reject(new Error('Mermaid renderer unavailable.'))
@@ -1688,7 +1689,7 @@ function t(key: MessageKey, params: Record<string, string | number> = {}) {
 }
 
 async function loadUiPreferences() {
-  const stored = await chrome.storage.local.get(UI_PREFERENCES_STORAGE_KEY)
+  const stored = await webext.storage.local.get(UI_PREFERENCES_STORAGE_KEY)
   applyUiPreferences(normalizeUiPreferences(stored[UI_PREFERENCES_STORAGE_KEY]))
 }
 
@@ -1698,7 +1699,7 @@ async function saveLanguageSettings() {
     aiOutputLocale: aiOutputLocaleSelect?.value,
   })
   applyUiPreferences(nextPreferences, { rerender: true })
-  await chrome.storage.local.set({ [UI_PREFERENCES_STORAGE_KEY]: nextPreferences })
+  await webext.storage.local.set({ [UI_PREFERENCES_STORAGE_KEY]: nextPreferences })
   if (languageSettingsStatus) setStatus(languageSettingsStatus, t('locale.saved'), 'success')
 }
 
@@ -1739,7 +1740,7 @@ function rerenderLocalizedView() {
 
 async function loadAnalysisSettings() {
   try {
-    const stored = await chrome.storage.local.get(ANALYSIS_SETTINGS_STORAGE_KEY)
+    const stored = await webext.storage.local.get(ANALYSIS_SETTINGS_STORAGE_KEY)
     state.analysisSettings = normalizeAnalysisSettings(stored[ANALYSIS_SETTINGS_STORAGE_KEY])
   } catch {
     state.analysisSettings = normalizeAnalysisSettings()
@@ -1799,7 +1800,7 @@ async function saveAnalysisSettings(event) {
   try {
     const maxFiles = parseAnalysisFileLimit(analysisSettingsForm.elements.maxFiles.valueAsNumber)
     const settings = { version: ANALYSIS_SETTINGS_VERSION, maxFiles }
-    await chrome.storage.local.set({ [ANALYSIS_SETTINGS_STORAGE_KEY]: settings })
+    await webext.storage.local.set({ [ANALYSIS_SETTINGS_STORAGE_KEY]: settings })
     state.analysisSettings = settings
     hydrateAnalysisSettings(settings)
     const quickLimit = resolveEffectiveAnalysisFileLimit(createAnalysisPlan({
@@ -1858,7 +1859,7 @@ async function testProvider() {
     }
     const config = normalizeProviderConfig(payload)
     if (state.vaultStatus !== 'unlocked') throw Object.assign(new Error(), { code: 'vault_locked' })
-    const { [CONNECTION_STORAGE_KEY]: savedConnection } = await chrome.storage.session.get(CONNECTION_STORAGE_KEY) as any
+    const { [CONNECTION_STORAGE_KEY]: savedConnection } = await webext.storage.session.get(CONNECTION_STORAGE_KEY) as any
     const savedConfig = savedConnection?.provider ? normalizeProviderConfig(savedConnection.provider) : null
     const apiKey = typeof payload.apiKey === 'string' && payload.apiKey.trim()
       ? payload.apiKey.trim()
@@ -1890,9 +1891,9 @@ async function testProvider() {
 async function requestProviderPermission(baseUrl, model = providerForm.elements.model.value) {
   const config = normalizeProviderConfig({ baseUrl, model, streaming: true })
   const origins = [permissionPattern(config.baseUrl)]
-  if (await chrome.permissions.contains({ origins })) return true
+  if (await webext.permissions.contains({ origins })) return true
   const host = new URL(config.baseUrl).host
-  const granted = await chrome.permissions.request({ origins })
+  const granted = await webext.permissions.request({ origins })
   if (!granted) throw Object.assign(new Error(), { code: 'permission', host })
   return true
 }
@@ -2075,7 +2076,7 @@ function friendlyGeneralError(error) {
 }
 
 async function sendMessage(message) {
-  const response = await chrome.runtime.sendMessage(message)
+  const response = await webext.runtime.sendMessage(message)
   if (!response?.ok) throw extensionError(response?.error)
   return response
 }

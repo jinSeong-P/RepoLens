@@ -10,10 +10,12 @@ import {
 
 test('accepts GitHub RPC only from the extension side panel', () => {
   const runtimeId = 'extension-id'
-  const sidePanelUrl = 'chrome-extension://extension-id/sidepanel.html'
-  assert.equal(isTrustedSidePanelSender({ id: runtimeId, url: sidePanelUrl }, runtimeId, sidePanelUrl), true)
-  assert.equal(isTrustedSidePanelSender({ id: runtimeId, url: 'chrome-extension://extension-id/other.html' }, runtimeId, sidePanelUrl), false)
-  assert.equal(isTrustedSidePanelSender({ id: 'other', url: sidePanelUrl }, runtimeId, sidePanelUrl), false)
+  for (const scheme of ['chrome-extension', 'moz-extension']) {
+    const sidePanelUrl = `${scheme}://extension-id/sidepanel.html`
+    assert.equal(isTrustedSidePanelSender({ id: runtimeId, url: sidePanelUrl }, runtimeId, sidePanelUrl), true)
+    assert.equal(isTrustedSidePanelSender({ id: runtimeId, url: `${scheme}://extension-id/other.html` }, runtimeId, sidePanelUrl), false)
+    assert.equal(isTrustedSidePanelSender({ id: 'other', url: sidePanelUrl }, runtimeId, sidePanelUrl), false)
+  }
   assert.deepEqual(GITHUB_API_PERMISSION, { origins: ['https://api.github.com/*'] })
 })
 

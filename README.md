@@ -2,11 +2,12 @@
 
 ![Status: Developer Preview](https://img.shields.io/badge/status-developer%20preview-F59E0B)
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-4285F4?logo=googlechrome&logoColor=white)
+![Firefox 140+](https://img.shields.io/badge/Firefox-140%2B-FF7139?logo=firefoxbrowser&logoColor=white)
 ![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-6E40C9)
 
 **Browse GitHub first. Ask AI only when a repository earns your curiosity.**
 
-RepoLens is a Chrome side-panel extension for understanding unfamiliar public
+RepoLens is a Chrome side-panel and Firefox sidebar extension for understanding unfamiliar public
 GitHub repositories without changing how you discover them. Explore, Trending,
 and search stay AI-free. When you open a repository, RepoLens selects a bounded
 set of files locally and sends only those excerpts to an OpenAI-compatible API
@@ -27,7 +28,7 @@ that you configure.
 
 ## Developer Preview
 
-RepoLens is usable as an MVP, but it is not yet a Chrome Web Store release or a
+RepoLens is usable as an MVP, but it is not yet a Chrome Web Store or Firefox Add-ons release or a
 claim of complete codebase understanding. Expect manual installation, provider
 compatibility edge cases, and changes to stored data or UI before a stable
 release. Reports are model-generated interpretations of selected files, not a
@@ -35,7 +36,7 @@ security audit or proof of runtime behavior.
 
 Current preview capabilities include:
 
-- a TypeScript-authored Chrome Manifest V3 side panel with a small, local build;
+- a TypeScript-authored Manifest V3 extension for Chrome side panels and Firefox sidebars;
 - public repositories and their default branch;
 - quick and deep analysis paths with one AI request per run;
 - encrypted AI connection presets and optional GitHub OAuth or PAT credentials;
@@ -45,10 +46,10 @@ Current preview capabilities include:
 
 ## Installation
 
-### Release ZIP
+### Chrome release ZIP
 
 When a packaged preview is available, open the
-[latest GitHub release](../../releases/latest), download the RepoLens extension
+[latest GitHub release](../../releases/latest), download the `repolens-extension`
 `.zip` asset, and extract it. Do not load the compressed file directly and do
 not use GitHub's automatically generated source archive unless the release
 notes explicitly say to do so.
@@ -58,18 +59,31 @@ notes explicitly say to do so.
 3. Select **Load unpacked**.
 4. Choose the extracted folder that directly contains `manifest.json`.
 
+### Firefox package
+
+Firefox 140 or newer uses the `repolens-firefox` ZIP. Normal Firefox releases
+require Mozilla signing, so the generated ZIP is intended for submission to
+Firefox Add-ons or temporary developer installation; renaming an unsigned ZIP
+to `.xpi` does not make it permanently installable.
+
+For a temporary local installation, open `about:debugging#/runtime/this-firefox`,
+choose **Load Temporary Add-on**, and select the built or extracted
+`manifest.json`. Firefox removes temporary add-ons when the browser restarts.
+
 ### Source checkout
 
-Clone or download this repository, then build the unpacked extension:
+Clone or download this repository, then build the desired browser target:
 
 ```powershell
 npm ci
-npm run build
+npm run build:chrome
+npm run build:firefox
 ```
 
-Use **Load unpacked** and select `build/extension`—the generated folder that
-directly contains `manifest.json`. Do not select the repository root; Chrome
-cannot execute the TypeScript source files directly.
+For Chrome, use **Load unpacked** and select `build/extension`. For Firefox,
+choose **Load Temporary Add-on** and select
+`build/firefox-extension/manifest.json`. Do not select the repository root;
+browsers cannot execute the TypeScript source files directly.
 
 ### First run
 
@@ -121,20 +135,20 @@ that every compatible provider has the same context window.
 
 | Area | Developer Preview support |
 | --- | --- |
-| Browser | Google Chrome 116+ and compatible Manifest V3 environments |
+| Browser | Google Chrome 116+ or Firefox 140+ |
 | Repositories | Public GitHub repositories, current default branch only |
 | Source handling | Static text reading only; repository code is never executed |
 | AI protocol | OpenAI-compatible `POST /chat/completions`, streaming or non-streaming |
 | Provider transport | HTTPS, plus HTTP for loopback hosts only |
 | Relationship expansion | Relative JS/TS references and exact supported config paths |
 | Output | Evidence-linked report, follow-up answers, and a conceptual project map |
-| Storage | Chrome-local encrypted presets; IndexedDB reports and public-source cache |
+| Storage | Browser-local encrypted presets; IndexedDB reports and public-source cache |
 
 For OpenAI, use `https://api.openai.com/v1` as the base URL. RepoLens appends
 `/chat/completions`. Other providers must implement the compatible request and
 response shape. They must also allow requests from the extension origin through
 CORS. RepoLens does not retry through a proxy after a CORS failure because that
-could duplicate generation and cost. Chrome requests access to a provider
+could duplicate generation and cost. The browser requests access to a provider
 origin only after a user action.
 
 Protocol compatibility does not guarantee that every model follows the report
@@ -168,7 +182,7 @@ should be evaluated from the installed Developer Preview.
 - A connection test sends a small generated request but no GitHub source code;
   it may still consume provider quota.
 - AI transport runs in the user-open trusted extension side panel, avoiding
-  long-response loss from the Manifest V3 service-worker lifecycle. Credentials
+  long-response loss from the Manifest V3 background-context lifecycle. Credentials
   are not exposed to GitHub pages or content scripts.
 - Repository files are untrusted data and cannot instruct the application.
   Source is sent as delimiter-escaped JSON without Base64 expansion.
@@ -176,8 +190,8 @@ should be evaluated from the installed Developer Preview.
   point to the exact analyzed commit.
 - The extension Content Security Policy allows packaged scripts only. Mermaid
   is loaded from the extension bundle, not a CDN.
-- Analysis history stays in this Chrome profile's IndexedDB until you delete an
-  item, clear all history, reset the vault, or remove the extension data.
+- Analysis history stays in the current browser profile's IndexedDB until you
+  delete an item, clear all history, reset the vault, or remove extension data.
 
 The selected AI provider is outside RepoLens's trust boundary. The repository
 owner does not receive the analysis request from RepoLens, but the AI provider
@@ -192,14 +206,15 @@ The preset vault uses the browser Web Crypto API:
   a 256-bit key from the master password.
 - AES-256-GCM uses a fresh random 12-byte IV and a 128-bit authentication tag
   for every write. Envelope metadata is authenticated as additional data.
-- After migration, `chrome.storage.local` retains only the versioned encrypted
+- After migration, WebExtension `storage.local` retains only the versioned encrypted
   envelope and non-secret vault or migration state. The master password is
   never stored or sent to GitHub, the AI provider, or another service.
 - While unlocked, derived key material and the current connection are
-  necessarily available in memory and `chrome.storage.session`. Session storage
-  is restricted to trusted extension contexts. Locking clears both records;
-  Chrome also clears them when the extension session ends. The preview does not
-  yet have a time-based automatic lock.
+  necessarily available in memory and WebExtension `storage.session`. Session
+  storage is restricted to trusted extension contexts where the browser API
+  supports that restriction. Locking clears both records; the browser also
+  clears them when the extension session ends. The preview does not yet have a
+  time-based automatic lock.
 
 The encrypted envelope includes preset names, base URLs, model IDs, API keys,
 streaming choices, GitHub OAuth or PAT credentials, and provider identity
@@ -210,7 +225,7 @@ The vault does **not** encrypt:
 
 - public envelope and cipher parameters, salt, IV, vault IDs, or ciphertext
   length;
-- provider-origin permissions that Chrome can display in extension settings;
+- provider-origin permissions that the browser can display in extension settings;
 - repository snapshots and excerpts, reports and maps, citations, follow-up
   questions and answers, or timestamps stored in IndexedDB; or
 - anonymous public GitHub metadata, branch heads, trees, and decoded text blobs
@@ -232,7 +247,7 @@ sent only to fixed GitHub origins. Locking or resetting the vault removes the
 active GitHub session credential.
 
 This build uses a dedicated RepoLens GitHub OAuth App with Device Flow enabled;
-its public Client ID is stored in `src/github-oauth-config.js`. A distributor
+its public Client ID is stored in `src/github-oauth-config.ts`. A distributor
 may replace it with an OAuth App they own. A browser extension must never
 contain the OAuth client secret.
 
@@ -255,8 +270,8 @@ caller from selecting an arbitrary Git object SHA. Concurrent requests are
 coalesced where possible and analysis cancellation stops work that is no longer
 needed.
 
-The analysis file-limit preference is stored separately in
-`chrome.storage.local`. The worker validates the 1–32 range again, and report
+The analysis file-limit preference is stored separately in WebExtension
+`storage.local`. The background context validates the 1–32 range again, and report
 cache keys include depth, selector version, and file cap so a report created at
 one scope is not silently reused at another.
 
@@ -293,7 +308,7 @@ tree, dependency audit, or proof of runtime behavior.
   failover.
 - The encrypted vault has no credential recovery, cross-device sync, or timed
   automatic lock.
-- Public result sharing, custom discovery ranking, and Chrome Web Store
+- Public result sharing, custom discovery ranking, and signed browser-store
   distribution are outside this Developer Preview.
 - GitHub and AI provider quotas, downtime, policy changes, and billing remain
   external dependencies.
@@ -305,11 +320,13 @@ compile the TypeScript sources, and run checks:
 
 ```powershell
 npm ci
-npm run build
+npm run build:chrome
+npm run build:firefox
 npm run check
 ```
 
-Load `build/extension` in Chrome after a successful build. The generated
+Load `build/extension` in Chrome or `build/firefox-extension/manifest.json` in
+Firefox after a successful build. The generated
 JavaScript is not committed and release ZIPs contain only executable build
 output and required static assets—not TypeScript sources, tests, source maps,
 or `node_modules`. Keep changes compatible with the extension Content Security

@@ -8,9 +8,14 @@
     "clean": "node scripts/clean.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.strict.json --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "build": "node scripts/build-extension.mjs",
-    "check": "npm run typecheck && npm test && npm run build && node scripts/check-manifest.mjs build/extension",
-    "package:extension": "npm run build && node scripts/package-extension.mjs build/extension"
+    "build": "npm run build:chrome",
+    "build:chrome": "node scripts/build-extension.mjs chrome",
+    "build:firefox": "node scripts/build-extension.mjs firefox",
+    "check": "npm run typecheck && npm test && npm run build:chrome && npm run build:firefox && node scripts/check-manifest.mjs build/extension chrome && node scripts/check-manifest.mjs build/firefox-extension firefox",
+    "package:extension": "npm run package:chrome",
+    "package:chrome": "npm run build:chrome && node scripts/package-extension.mjs build/extension chrome",
+    "package:firefox": "npm run build:firefox && node scripts/package-extension.mjs build/firefox-extension firefox",
+    "package:all": "npm run package:chrome && npm run package:firefox"
   },
   "devDependencies": {
     "@types/chrome": "0.2.5",

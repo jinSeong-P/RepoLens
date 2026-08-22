@@ -40,14 +40,14 @@ test('language settings expose independent UI and AI output locale selectors', (
 })
 
 test('language changes normalize, apply immediately, persist, and rerender the active view', () => {
-  const listenerSource = sourceBetween('homeButton.addEventListener', 'chrome.tabs.onActivated.addListener')
+  const listenerSource = sourceBetween('homeButton.addEventListener', 'webext.tabs.onActivated.addListener')
   const source = sourceBetween('async function loadUiPreferences', 'async function loadAnalysisSettings')
   const saveIndex = source.indexOf('async function saveLanguageSettings')
   const applyIndex = source.indexOf('applyUiPreferences(nextPreferences, { rerender: true })', saveIndex)
-  const persistIndex = source.indexOf('chrome.storage.local.set({ [UI_PREFERENCES_STORAGE_KEY]: nextPreferences })', saveIndex)
+  const persistIndex = source.indexOf('webext.storage.local.set({ [UI_PREFERENCES_STORAGE_KEY]: nextPreferences })', saveIndex)
 
   assert.match(listenerSource, /languageSettingsForm\?\.addEventListener\(['"]change['"], saveLanguageSettings\)/)
-  assert.match(source, /chrome\.storage\.local\.get\(UI_PREFERENCES_STORAGE_KEY\)/)
+  assert.match(source, /webext\.storage\.local\.get\(UI_PREFERENCES_STORAGE_KEY\)/)
   assert.match(source, /normalizeUiPreferences\(stored\[UI_PREFERENCES_STORAGE_KEY\]\)/)
   assert.match(source, /uiLocale:\s*uiLocaleSelect\?\.value/)
   assert.match(source, /aiOutputLocale:\s*aiOutputLocaleSelect\?\.value/)
@@ -173,7 +173,7 @@ test('analysis scope exposes the shared default, safe range, and fixed character
     .map((match) => match[1])
   const collectSource = sourceBetween('function collectRepository', 'function resolveRepository')
   const settingsSource = sourceBetween('async function loadAnalysisSettings', 'function hydrateProviderForm')
-  const storageListenerSource = sourceBetween('chrome.storage.onChanged.addListener', 'window.addEventListener')
+  const storageListenerSource = sourceBetween('webext.storage.onChanged.addListener', 'window.addEventListener')
 
   assert.match(input, /type=["']number["']/)
   assert.match(input, /value=["']16["']/)
@@ -184,8 +184,8 @@ test('analysis scope exposes the shared default, safe range, and fixed character
   assert.match(helpTag, /data-i18n=["']analysisSettings\.maxFilesHelp["']/)
   assert.match(collectSource, /maxFiles:\s*analysisPlan\.maxFiles/)
   assert.match(collectSource, /depth:\s*analysisPlan\.depth/)
-  assert.match(settingsSource, /chrome\.storage\.local\.get\(ANALYSIS_SETTINGS_STORAGE_KEY\)/)
-  assert.match(settingsSource, /chrome\.storage\.local\.set\(\{ \[ANALYSIS_SETTINGS_STORAGE_KEY\]: settings \}\)/)
+  assert.match(settingsSource, /webext\.storage\.local\.get\(ANALYSIS_SETTINGS_STORAGE_KEY\)/)
+  assert.match(settingsSource, /webext\.storage\.local\.set\(\{ \[ANALYSIS_SETTINGS_STORAGE_KEY\]: settings \}\)/)
   assert.match(settingsSource, /event\.target\?\.name !== ['"]maxFilesPreset['"]/)
   assert.match(settingsSource, /analysisSettingsForm\.elements\.maxFiles\.value = event\.target\.value/)
   assert.match(storageListenerSource, /changes\[ANALYSIS_SETTINGS_STORAGE_KEY\]/)
